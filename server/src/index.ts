@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import apiRouter from "./routes/index.js";
 import supabaseConfigRouter from "./routes/supabase-config.js";
+import wechatRouter from "./routes/wechat.js";
 import { getSupabaseClient } from "./storage/database/supabase-client.js";
 
 const app = express();
@@ -51,6 +52,9 @@ app.get('/api/v1/version/check', async (req, res) => {
 
 // Supabase config endpoint (for frontend to get URL and anon key)
 app.use('/api/supabase-config', supabaseConfigRouter);
+
+// WeChat mini program routes (public, no auth required for login/bind)
+app.use('/api/v1/wechat', wechatRouter);
 
 // API routes
 app.use('/api/v1', apiRouter);

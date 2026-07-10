@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Modal, View, Text, ActivityIndicator, StyleSheet, Platform, TouchableOpacity } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -24,13 +24,7 @@ export default function UpdateChecker() {
   const [updating, setUpdating] = useState(false);
   const checkedRef = useRef(false);
 
-  useEffect(() => {
-    if (authLoading || checkedRef.current) return;
-    checkedRef.current = true;
-    checkForUpdate();
-  }, [authLoading]);
-
-  const checkForUpdate = async () => {
+  const checkForUpdate = useCallback(async () => {
     try {
       const base = process.env.EXPO_PUBLIC_BACKEND_BASE_URL || "";
       const res = await fetch(`${base}/api/v1/version/check?currentVersion=${APP_VERSION}`);
@@ -48,7 +42,14 @@ export default function UpdateChecker() {
     } catch {
       // Silent fail - don't block app usage
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (authLoading || checkedRef.current) return;
+    checkedRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    checkForUpdate();
+  }, [authLoading, checkForUpdate]);
 
   const startUpdate = async () => {
     setUpdating(true);

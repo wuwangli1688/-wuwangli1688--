@@ -20,6 +20,7 @@
     "drizzle-zod": "^0.8.3",
     "exceljs": "^4.4.0",
     "express": "^4.22.1",
+    "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "pg": "^8.16.3",
     "qrcode": "^1.5.4",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
     "@types/pg": "^8.16.0",
     "drizzle-kit": "^0.31.8",

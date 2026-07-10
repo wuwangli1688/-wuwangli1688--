@@ -46,8 +46,8 @@ const AuthContext = createContext<AuthContextType>({
   email: null,
   signIn: async () => ({}),
   signUp: async () => ({}),
-  signOut: async () => {},
-  refreshProfile: async () => {},
+  signOut: async () => { /* default */ },
+  refreshProfile: async () => { /* default */ },
   resetPasswordRequest: async () => ({}),
   resetPassword: async () => ({}),
 });

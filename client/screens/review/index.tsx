@@ -137,7 +137,7 @@ export default function ReviewScreen() {
         </View>
       ) : pendingList.length === 0 ? (
         <View style={s.emptyContainer}>
-          <FontAwesome6 name="check-circle" size={48} color="#10B981" />
+          <FontAwesome6 name="circle-check" size={48} color="#10B981" />
           <Text style={s.emptyText}>暂无待审核记录</Text>
           <Text style={s.emptySubText}>所有记录已处理</Text>
         </View>

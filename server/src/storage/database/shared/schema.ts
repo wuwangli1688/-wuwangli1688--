@@ -107,12 +107,18 @@ export const userProfiles = pgTable(
     role: varchar("role", { length: 20 }).notNull().default("parent"),
     parentUserId: uuid("parent_user_id"),
     displayName: varchar("display_name", { length: 100 }),
+    platform: varchar("platform", { length: 20 }).default("app"),
+    wxOpenid: varchar("wx_openid", { length: 100 }),
+    wxUnionid: varchar("wx_unionid", { length: 100 }),
+    wxNickname: varchar("wx_nickname", { length: 100 }),
+    wxAvatarUrl: text("wx_avatar_url"),
     createdAt: timestamp("created_at", { mode: "string" }).default(
       sql`CURRENT_TIMESTAMP`
     ),
   },
   (table) => [
     index("idx_user_profiles_parent").using("btree", table.parentUserId),
+    index("idx_user_profiles_wx_openid").using("btree", table.wxOpenid),
   ]
 );
 
