@@ -185,27 +185,45 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const handleCheckUpdate = () => {
+  const handleCheckUpdate = async () => {
     setUpdateProgress(0);
     setUpdateStatus("正在检查新版本...");
     setIsUpdating(true);
     setUpdateModalVisible(true);
 
-    // Simulate update check and download progress
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.random() * 15 + 5;
-      if (progress >= 30 && progress < 50) {
-        setUpdateStatus("发现新版本 v" + APP_VERSION + "，正在下载...");
-      }
-      if (progress >= 100) {
-        progress = 100;
-        clearInterval(interval);
-        setUpdateStatus("更新完成！新版本已就绪");
+    try {
+      const res = await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/version/check?current=${APP_VERSION}`);
+      const data = await res.json();
+
+      if (!data.has_update) {
+        setUpdateProgress(100);
+        setUpdateStatus(`当前已是最新版本 v${APP_VERSION}`);
         setIsUpdating(false);
+        return;
       }
-      setUpdateProgress(Math.min(progress, 100));
-    }, 300);
+
+      setUpdateStatus(`发现新版本 v${data.latest_version}，正在下载更新...`);
+
+      // Simulate download progress
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += Math.random() * 15 + 8;
+        if (progress >= 100) {
+          progress = 100;
+          clearInterval(interval);
+          setUpdateStatus(`更新完成！v${data.latest_version} 已就绪`);
+          setIsUpdating(false);
+          // Reload the app to get the latest version
+          if (Platform.OS === "web") {
+            setTimeout(() => window.location.reload(), 1500);
+          }
+        }
+        setUpdateProgress(Math.min(progress, 100));
+      }, 300);
+    } catch {
+      setUpdateStatus("检查更新失败，请稍后重试");
+      setIsUpdating(false);
+    }
   };
 
   const handleLogout = () => {
