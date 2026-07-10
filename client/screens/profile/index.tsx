@@ -6,11 +6,15 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
+  ActivityIndicator,
 } from "react-native";
 import { Screen } from "@/components/Screen";
 import { useFocusEffect } from "expo-router";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -24,6 +28,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const [summary, setSummary] = useState<Summary>({ total_income: "0.00", total_expense: "0.00", balance: "0.00" });
   const [totalCount, setTotalCount] = useState(0);
+  const [exporting, setExporting] = useState(false);
 
   const fetchAllTimeStats = useCallback(async () => {
     try {
@@ -48,6 +53,53 @@ export default function ProfileScreen() {
     }, [fetchAllTimeStats])
   );
 
+  const handleExport = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+
+    try {
+      const url = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/export/transactions`;
+
+      if (Platform.OS === "web") {
+        // Web: 直接打开下载链接
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        // Mobile: 下载文件到本地然后分享
+        const now = new Date();
+        const fileName = `记账明细_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}.xlsx`;
+        const fileUri = `${(FileSystem as any).documentDirectory}${fileName}`;
+
+        const downloadResult = await (FileSystem as any).downloadAsync(url, fileUri);
+
+        if (downloadResult.status !== 200) {
+          Alert.alert("导出失败", "下载文件失败，请稍后重试");
+          return;
+        }
+
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(downloadResult.uri, {
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            dialogTitle: "导出记账明细",
+            UTI: "org.openxmlformats.spreadsheetml.sheet",
+          });
+        } else {
+          Alert.alert("提示", "文件已保存到本地：\n" + downloadResult.uri);
+        }
+      }
+    } catch (err) {
+      console.error("Export failed:", err);
+      Alert.alert("导出失败", "导出过程中发生错误，请稍后重试");
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting]);
+
   const handleClearData = () => {
     Alert.alert(
       "确认清除",
@@ -59,7 +111,6 @@ export default function ProfileScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              // Fetch all transactions and delete them one by one
               const res = await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?size=100`);
               const data = await res.json();
               const transactions = data.data || [];
@@ -139,7 +190,28 @@ export default function ProfileScreen() {
         {/* Actions */}
         <View style={styles.actionsSection}>
           <Text style={styles.actionsTitle}>数据管理</Text>
-          <TouchableOpacity style={styles.actionItem} onPress={handleClearData}>
+
+          {/* 导出 Excel */}
+          <TouchableOpacity
+            style={styles.actionItem}
+            onPress={handleExport}
+            disabled={exporting}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: "#DBEAFE" }]}>
+              {exporting ? (
+                <ActivityIndicator size="small" color="#2563EB" />
+              ) : (
+                <FontAwesome6 name="file-excel" size={16} color="#2563EB" />
+              )}
+            </View>
+            <Text style={styles.actionText}>
+              {exporting ? "导出中..." : "导出 Excel"}
+            </Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          {/* 清除数据 */}
+          <TouchableOpacity style={[styles.actionItem, { marginTop: 12 }]} onPress={handleClearData}>
             <View style={[styles.actionIcon, { backgroundColor: "#FEE2E2" }]}>
               <FontAwesome6 name="trash" size={16} color="#DC2626" />
             </View>

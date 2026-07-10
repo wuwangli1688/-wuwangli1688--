@@ -265,4 +265,9 @@ router.delete("/transactions/:id", async (req: Request, res: Response) => {
   }
 });
 
+import exportRouter from "./export.js";
+
+// ==================== 导出接口 ====================
+router.use("/export", exportRouter);
+
 export default router;
