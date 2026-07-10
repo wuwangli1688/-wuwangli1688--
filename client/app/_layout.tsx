@@ -51,6 +51,8 @@ export default function RootLayout() {
           <Stack.Screen name="register" options={{ title: "注册" }} />
           <Stack.Screen name="account-manage" options={{ title: "子账号管理" }} />
           <Stack.Screen name="review" options={{ title: "审核记录" }} />
+          <Stack.Screen name="stores" options={{ title: "店铺管理" }} />
+          <Stack.Screen name="share" options={{ title: "分享应用" }} />
           <Stack.Screen name="(tabs)" options={{ title: "" }} />
         </Stack>
         <Toast />

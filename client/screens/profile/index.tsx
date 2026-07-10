@@ -313,6 +313,14 @@ export default function ProfileScreen() {
               <Text style={styles.actionText}>子账号管理</Text>
               <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
             </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/stores")}>
+              <View style={[styles.actionIcon, { backgroundColor: "#E0F2FE" }]}>
+                <FontAwesome6 name="store" size={16} color="#0284C7" />
+              </View>
+              <Text style={styles.actionText}>店铺管理</Text>
+              <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+            </TouchableOpacity>
           </View>
         )}
 
@@ -329,6 +337,14 @@ export default function ProfileScreen() {
               )}
             </View>
             <Text style={styles.actionText}>{exporting ? "导出中..." : "导出 Excel"}</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/share")}>
+            <View style={[styles.actionIcon, { backgroundColor: "#F0FDF4" }]}>
+              <FontAwesome6 name="qrcode" size={16} color="#059669" />
+            </View>
+            <Text style={styles.actionText}>分享应用 / 二维码</Text>
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
 

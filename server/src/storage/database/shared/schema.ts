@@ -30,6 +30,44 @@ export const categories = pgTable(
   ]
 );
 
+// Stores (店铺) - owned by parent accounts
+export const stores = pgTable(
+  "stores",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    name: varchar("name", { length: 100 }).notNull(),
+    ownerId: uuid("owner_id").notNull(), // parent user id who owns this store
+    createdAt: timestamp("created_at", { mode: "string" }).default(
+      sql`CURRENT_TIMESTAMP`
+    ),
+  },
+  (table) => [
+    index("idx_stores_owner_id").using("btree", table.ownerId),
+  ]
+);
+
+// Store permissions - which sub-accounts can access which stores
+export const storePermissions = pgTable(
+  "store_permissions",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    storeId: uuid("store_id").notNull(),
+    userId: uuid("user_id").notNull(), // sub-account user id
+    grantedBy: uuid("granted_by").notNull(), // parent user id who granted
+    createdAt: timestamp("created_at", { mode: "string" }).default(
+      sql`CURRENT_TIMESTAMP`
+    ),
+  },
+  (table) => [
+    index("idx_store_permissions_store_id").using("btree", table.storeId),
+    index("idx_store_permissions_user_id").using("btree", table.userId),
+  ]
+);
+
 export const transactions = pgTable(
   "transactions",
   {
@@ -42,6 +80,7 @@ export const transactions = pgTable(
     note: text("note"),
     date: timestamp("date", { mode: "string" }).notNull(),
     userId: uuid("user_id").notNull(),
+    storeId: uuid("store_id"), // which store this transaction belongs to
     status: varchar("status", { length: 20 }).default("approved"),
     reviewedBy: uuid("reviewed_by"),
     reviewedAt: timestamp("reviewed_at", { mode: "string" }),
@@ -55,6 +94,7 @@ export const transactions = pgTable(
     index("idx_transactions_date").using("btree", table.date),
     index("idx_transactions_user_id").using("btree", table.userId),
     index("idx_transactions_status").using("btree", table.status),
+    index("idx_transactions_store_id").using("btree", table.storeId),
   ]
 );
 
@@ -82,3 +122,7 @@ export type InsertTransaction = typeof transactions.$inferInsert;
 export type SelectTransaction = typeof transactions.$inferSelect;
 export type InsertUserProfile = typeof userProfiles.$inferInsert;
 export type SelectUserProfile = typeof userProfiles.$inferSelect;
+export type InsertStore = typeof stores.$inferInsert;
+export type SelectStore = typeof stores.$inferSelect;
+export type InsertStorePermission = typeof storePermissions.$inferInsert;
+export type SelectStorePermission = typeof storePermissions.$inferSelect;

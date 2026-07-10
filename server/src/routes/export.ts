@@ -9,7 +9,7 @@ const router = Router();
 // GET /api/v1/export/transactions - Export transactions to Excel
 router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { start_date, end_date } = req.query;
+    const { start_date, end_date, store_id } = req.query;
     const client = getSupabaseClient();
     const userId = req.userId!;
     const role = req.userRole!;
@@ -29,7 +29,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
 
     let query = client
       .from("transactions")
-      .select("id, amount, type, category_id, note, date, categories(name)")
+      .select("id, amount, type, category_id, note, date, store_id, categories(name), stores(name)")
       .eq("status", "approved")
       .in("user_id", visibleIds)
       .order("date", { ascending: true });
@@ -39,6 +39,21 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
     }
     if (end_date) {
       query = query.lte("date", end_date as string);
+    }
+    if (store_id) {
+      query = query.eq("store_id", store_id as string);
+    } else if (role === 'child') {
+      // Child accounts: only export from permitted stores
+      const { data: perms } = await client
+        .from('store_permissions')
+        .select('store_id')
+        .eq('user_id', userId);
+      const visibleStoreIds = (perms || []).map((p: any) => p.store_id);
+      if (visibleStoreIds.length > 0) {
+        query = query.or(`store_id.is.null,store_id.in.(${visibleStoreIds.join(',')})`);
+      } else {
+        query = query.is("store_id", null);
+      }
     }
 
     const { data, error } = await query;
@@ -52,6 +67,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
     worksheet.columns = [
       { header: "日期", key: "date", width: 14 },
       { header: "序号", key: "seq", width: 8 },
+      { header: "店铺", key: "store", width: 12 },
       { header: "分类", key: "category", width: 10 },
       { header: "项目", key: "project", width: 16 },
       { header: "收入", key: "income", width: 12 },
@@ -61,7 +77,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
     ];
 
     // Title row
-    worksheet.mergeCells(1, 1, 1, 8);
+    worksheet.mergeCells(1, 1, 1, 9);
     const titleCell = worksheet.getCell("A1");
     titleCell.value = "日记表";
     titleCell.alignment = { horizontal: "center", vertical: "middle" };
@@ -86,6 +102,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
     for (const t of transactions) {
       const amount = parseFloat(t.amount);
       const cat = t.categories as unknown as { name: string };
+      const store = t.stores as unknown as { name: string } | null;
 
       if (t.type === "income") {
         balance += amount;
@@ -99,6 +116,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
       const rowData: Record<string, unknown> = {
         date: dateStr,
         seq: seq,
+        store: store?.name || "",
         category: "",
         project: "",
         income: isIncome ? amount : "",

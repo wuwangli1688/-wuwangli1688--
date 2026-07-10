@@ -26,6 +26,11 @@ interface Category {
   color: string;
 }
 
+interface Store {
+  id: string;
+  name: string;
+}
+
 const iconMap: Record<string, keyof typeof FontAwesome6.glyphMap> = {
   restaurant: "utensils",
   car: "car",
@@ -52,6 +57,8 @@ export default function AddScreen() {
   const router = useSafeRouter();
   const [type, setType] = useState<"expense" | "income">("expense");
   const [categories, setCategories] = useState<Category[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
@@ -60,6 +67,7 @@ export default function AddScreen() {
 
   useEffect(() => {
     fetchCategories();
+    fetchStores();
   }, [type]);
 
   const fetchCategories = async () => {
@@ -70,6 +78,20 @@ export default function AddScreen() {
       setSelectedCategory(null);
     } catch (err) {
       console.error("Failed to fetch categories:", err);
+    }
+  };
+
+  const fetchStores = async () => {
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores`);
+      const data = await res.json();
+      const storeList = data.data || [];
+      setStores(storeList);
+      if (storeList.length === 1) {
+        setSelectedStoreId(storeList[0].id);
+      }
+    } catch (err) {
+      console.error("Failed to fetch stores:", err);
     }
   };
 
@@ -97,6 +119,7 @@ export default function AddScreen() {
           amount,
           type,
           category_id: selectedCategory,
+          store_id: selectedStoreId,
           note: note || null,
           date: new Date(date).toISOString(),
         }),
@@ -172,6 +195,36 @@ export default function AddScreen() {
               keyboardType="decimal-pad"
             />
           </View>
+
+          {/* Store Picker */}
+          {stores.length > 0 && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>选择店铺</Text>
+              </View>
+              <View style={styles.storePicker}>
+                {stores.map((store) => (
+                  <TouchableOpacity
+                    key={store.id}
+                    style={[
+                      styles.storeChip,
+                      selectedStoreId === store.id && styles.storeChipActive,
+                    ]}
+                    onPress={() => setSelectedStoreId(store.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.storeChipText,
+                        selectedStoreId === store.id && styles.storeChipTextActive,
+                      ]}
+                    >
+                      {store.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
           {/* Category Grid */}
           <View style={styles.sectionHeader}>
@@ -388,5 +441,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#FFFFFF",
+  },
+  storePicker: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 20,
+  },
+  storeChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  storeChipActive: {
+    backgroundColor: "#0284C7",
+    borderColor: "#0284C7",
+  },
+  storeChipText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#475569",
+  },
+  storeChipTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
 });

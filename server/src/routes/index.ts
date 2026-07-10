@@ -75,6 +75,24 @@ async function getVisibleUserIds(client: any, userId: string, role: string, pare
   }
 }
 
+// Helper: get visible store IDs for current user
+// Parent sees all their stores; Child sees only permitted stores
+async function getVisibleStoreIds(client: any, userId: string, role: string): Promise<string[]> {
+  if (role === 'parent') {
+    const { data } = await client
+      .from('stores')
+      .select('id')
+      .eq('owner_id', userId);
+    return (data || []).map((s: any) => s.id);
+  } else {
+    const { data } = await client
+      .from('store_permissions')
+      .select('store_id')
+      .eq('user_id', userId);
+    return (data || []).map((p: any) => p.store_id);
+  }
+}
+
 // GET /api/v1/transactions/summary
 router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -97,6 +115,17 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
     }
     if (end_date) {
       query = query.lte("date", end_date as string);
+    }
+    // Store filtering for summary
+    if (req.query.store_id) {
+      query = query.eq("store_id", req.query.store_id as string);
+    } else if (role === 'child') {
+      const visibleStoreIds = await getVisibleStoreIds(client, userId, role);
+      if (visibleStoreIds.length > 0) {
+        query = query.or(`store_id.is.null,store_id.in.(${visibleStoreIds.join(',')})`);
+      } else {
+        query = query.is("store_id", null);
+      }
     }
 
     const { data, error } = await query;
@@ -128,7 +157,7 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
 // GET /api/v1/transactions/stats-by-category
 router.get("/transactions/stats-by-category", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { type = "expense", start_date, end_date } = req.query;
+    const { type = "expense", start_date, end_date, store_id } = req.query;
     const client = getSupabaseClient();
     const userId = req.userId!;
     const role = req.userRole!;
@@ -148,6 +177,16 @@ router.get("/transactions/stats-by-category", async (req: AuthenticatedRequest, 
     }
     if (end_date) {
       query = query.lte("date", end_date as string);
+    }
+    if (store_id) {
+      query = query.eq("store_id", store_id as string);
+    } else if (role === 'child') {
+      const visibleStoreIds = await getVisibleStoreIds(client, userId, role);
+      if (visibleStoreIds.length > 0) {
+        query = query.or(`store_id.is.null,store_id.in.(${visibleStoreIds.join(',')})`);
+      } else {
+        query = query.is("store_id", null);
+      }
     }
 
     const { data, error } = await query;
@@ -186,7 +225,7 @@ router.get("/transactions/stats-by-category", async (req: AuthenticatedRequest, 
 // GET /api/v1/transactions
 router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { page = "1", size = "20", type, category_id, start_date, end_date } = req.query;
+    const { page = "1", size = "20", type, category_id, start_date, end_date, store_id } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
     const sizeNum = Math.min(100, Math.max(1, parseInt(size as string)));
     const offset = (pageNum - 1) * sizeNum;
@@ -200,7 +239,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
 
     let query = client
       .from("transactions")
-      .select("id, amount, type, category_id, note, date, status, user_id, created_at, categories(name, icon, color)", { count: "exact" })
+      .select("id, amount, type, category_id, note, date, status, user_id, store_id, created_at, categories(name, icon, color), stores(name)", { count: "exact" })
       .eq("status", "approved")
       .in("user_id", visibleIds)
       .order("date", { ascending: false });
@@ -216,6 +255,19 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
     }
     if (end_date) {
       query = query.lte("date", end_date as string);
+    }
+    // Store filtering
+    if (store_id) {
+      query = query.eq("store_id", store_id as string);
+    } else if (role === 'child') {
+      // Child accounts: only show transactions from permitted stores
+      const visibleStoreIds = await getVisibleStoreIds(client, userId, role);
+      // Show transactions with no store OR in permitted stores
+      if (visibleStoreIds.length > 0) {
+        query = query.or(`store_id.is.null,store_id.in.(${visibleStoreIds.join(',')})`);
+      } else {
+        query = query.is("store_id", null);
+      }
     }
 
     const { data, error, count } = await query.range(offset, offset + sizeNum - 1);
@@ -241,7 +293,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
 // For parent accounts, status is 'approved' directly
 router.post("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { amount, type, category_id, note, date } = req.body;
+    const { amount, type, category_id, note, date, store_id } = req.body;
     const userId = req.userId!;
     const role = req.userRole!;
 
@@ -255,17 +307,22 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
     const status = role === 'child' ? 'pending' : 'approved';
 
     const client = getSupabaseClient();
+    const insertData: any = {
+      amount: String(amount),
+      type,
+      category_id,
+      note: note || null,
+      date,
+      user_id: userId,
+      status,
+    };
+    if (store_id) {
+      insertData.store_id = store_id;
+    }
+
     const { data, error } = await client
       .from("transactions")
-      .insert({
-        amount: String(amount),
-        type,
-        category_id,
-        note: note || null,
-        date,
-        user_id: userId,
-        status,
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -333,9 +390,19 @@ import exportRouter from "./export.js";
 // ==================== Export ====================
 router.use("/export", exportRouter);
 
+import shareRouter from "./share.js";
+
+// ==================== Share / QR Code ====================
+router.use("/share", shareRouter);
+
 import accountsRouter from "./accounts.js";
 
 // ==================== Account Management ====================
 router.use("/accounts", accountsRouter);
+
+import storesRouter from "./stores.js";
+
+// ==================== Stores (店铺) ====================
+router.use("/stores", storesRouter);
 
 export default router;
