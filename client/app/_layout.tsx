@@ -21,7 +21,7 @@ function AuthRedirect() {
   useEffect(() => {
     if (!rootState?.key || isLoading) return;
 
-    const inAuthGroup = segments[0] === 'login' || segments[0] === 'register';
+    const inAuthGroup = segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'forgot-password';
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/login');
@@ -49,6 +49,7 @@ export default function RootLayout() {
         >
           <Stack.Screen name="login" options={{ title: "登录" }} />
           <Stack.Screen name="register" options={{ title: "注册" }} />
+          <Stack.Screen name="forgot-password" options={{ title: "找回密码" }} />
           <Stack.Screen name="account-manage" options={{ title: "子账号管理" }} />
           <Stack.Screen name="review" options={{ title: "审核记录" }} />
           <Stack.Screen name="stores" options={{ title: "店铺管理" }} />

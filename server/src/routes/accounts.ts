@@ -1,14 +1,107 @@
 import { Router } from 'express';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { authMiddleware, requireParent } from '../middleware/auth.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
-import { getSupabaseClient, getSupabaseCredentials } from '../storage/database/supabase-client.js';
+import { getSupabaseClient } from '../storage/database/supabase-client.js';
 import { categories, transactions, userProfiles } from '../storage/database/shared/schema.js';
 import { eq, and, desc, gte, lte, inArray, isNull, or, sql } from 'drizzle-orm';
 
 const router = Router();
 
-// All routes require authentication
+// ============ Password Reset (no auth required) ============
+// POST /api/v1/accounts/reset-password-request - Send reset code
+router.post('/reset-password-request', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: '请提供邮箱地址' });
+    }
+
+    const adminClient = getSupabaseClient();
+
+    // Check if user exists (try both raw email and @记账app.local format)
+    const { data: users } = await adminClient.auth.admin.listUsers();
+    const foundUser = users.users.find((u: { email?: string }) =>
+      u.email?.toLowerCase() === email.toLowerCase() ||
+      u.email?.toLowerCase() === `${email}@记账app.local`.toLowerCase()
+    );
+
+    if (!foundUser) {
+      // Don't reveal whether the email exists
+      return res.json({ message: '如果该邮箱已注册，重置密码链接已发送' });
+    }
+
+    const targetEmail = foundUser.email!;
+
+    const { error } = await adminClient.auth.resetPasswordForEmail(targetEmail, {
+      redirectTo: process.env.EXPO_PUBLIC_BACKEND_BASE_URL || 'http://localhost:5000',
+    });
+
+    if (error) {
+      console.error('Reset password error:', error);
+      return res.status(500).json({ error: '发送重置链接失败: ' + error.message });
+    }
+
+    return res.json({ message: '重置密码链接已发送到您的邮箱' });
+  } catch (error) {
+    console.error('Reset password request error:', error);
+    return res.status(500).json({ error: '请求失败' });
+  }
+});
+
+// POST /api/v1/accounts/reset-password - Reset password with code
+router.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: '请提供邮箱、验证码和新密码' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: '密码长度至少8位' });
+    }
+
+    const adminClient = getSupabaseClient();
+
+    // Find user by email
+    const { data: users } = await adminClient.auth.admin.listUsers();
+    const foundUser = users.users.find((u: { email?: string }) =>
+      u.email?.toLowerCase() === email.toLowerCase() ||
+      u.email?.toLowerCase() === `${email}@记账app.local`.toLowerCase()
+    );
+
+    if (!foundUser) {
+      return res.status(400).json({ error: '该账号未注册' });
+    }
+
+    // Verify OTP code
+    const { data: verifyData, error: verifyError } = await adminClient.auth.verifyOtp({
+      email: foundUser.email!,
+      token: code,
+      type: 'recovery',
+    });
+
+    if (verifyError || !verifyData.session) {
+      return res.status(400).json({ error: '验证码无效或已过期' });
+    }
+
+    // Update password using the verified session
+    const userClient = getSupabaseClient(verifyData.session.access_token);
+    const { error: updateError } = await userClient.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (updateError) {
+      return res.status(500).json({ error: '密码重置失败: ' + updateError.message });
+    }
+
+    return res.json({ message: '密码重置成功，请使用新密码登录' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    return res.status(500).json({ error: '重置失败' });
+  }
+});
+
+// All routes below require authentication
 router.use(authMiddleware);
 
 // ============ Password Change ============
@@ -19,8 +112,8 @@ router.post('/change-password', async (req: AuthenticatedRequest, res: Response)
     if (!oldPassword || !newPassword) {
       return res.status(400).json({ error: '请提供旧密码和新密码' });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: '新密码长度至少6位' });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: '新密码长度至少8位' });
     }
 
     const token = req.headers['x-session'] as string;

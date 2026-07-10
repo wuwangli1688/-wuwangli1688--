@@ -2,6 +2,21 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import type { User, Session } from '@supabase/supabase-js';
 import { getSupabase } from '@/lib/supabase';
 
+const BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+
+/**
+ * Convert a flexible account input (email, phone, or username) to a valid Supabase email.
+ * - If it contains '@' and '.', treat as email
+ * - Otherwise, append @记账app.local to make it a valid email for Supabase
+ */
+function toSupabaseEmail(account: string): string {
+  const trimmed = account.trim();
+  if (trimmed.includes('@') && trimmed.includes('.')) {
+    return trimmed.toLowerCase();
+  }
+  return `${trimmed}@记账app.local`.toLowerCase();
+}
+
 interface AuthState {
   user: User | null;
   session: Session | null;
@@ -11,10 +26,12 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signUp: (email: string, password: string) => Promise<{ error?: string }>;
+  signIn: (account: string, password: string) => Promise<{ error?: string }>;
+  signUp: (account: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  resetPasswordRequest: (account: string) => Promise<{ error?: string; message?: string }>;
+  resetPassword: (account: string, code: string, newPassword: string) => Promise<{ error?: string }>;
   isAuthenticated: boolean;
   email: string | null;
 }
@@ -31,6 +48,8 @@ const AuthContext = createContext<AuthContextType>({
   signUp: async () => ({}),
   signOut: async () => {},
   refreshProfile: async () => {},
+  resetPasswordRequest: async () => ({}),
+  resetPassword: async () => ({}),
 });
 
 export function useAuth() {
@@ -52,8 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
-      const res = await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/me`, {
+      const res = await fetch(`${BACKEND_BASE_URL}/api/v1/accounts/me`, {
         headers: { 'x-session': session.access_token },
       });
 
@@ -130,7 +148,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     init();
   }, [fetchProfile]);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (account: string, password: string) => {
+    const email = toSupabaseEmail(account);
     const supabase = await getSupabase();
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -154,7 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {};
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (account: string, password: string) => {
+    const email = toSupabaseEmail(account);
     const supabase = await getSupabase();
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -174,9 +194,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       // Create profile as parent
-      const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
       try {
-        await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/ensure-profile`, {
+        await fetch(`${BACKEND_BASE_URL}/api/v1/accounts/ensure-profile`, {
           method: 'POST',
           headers: {
             'x-session': data.session.access_token,
@@ -210,6 +229,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const resetPasswordRequest = async (account: string) => {
+    try {
+      const res = await fetch(`${BACKEND_BASE_URL}/api/v1/accounts/reset-password-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: account.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || '发送失败' };
+      return { message: data.message || '重置链接已发送' };
+    } catch {
+      return { error: '网络请求失败' };
+    }
+  };
+
+  const resetPassword = async (account: string, code: string, newPassword: string) => {
+    try {
+      const res = await fetch(`${BACKEND_BASE_URL}/api/v1/accounts/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: account.trim(), code, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || '重置失败' };
+      return {};
+    } catch {
+      return { error: '网络请求失败' };
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -220,6 +269,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         signOut,
         refreshProfile,
+        resetPasswordRequest,
+        resetPassword,
       }}
     >
       {children}
