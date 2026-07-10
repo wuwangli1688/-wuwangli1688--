@@ -11,6 +11,7 @@ import { Screen } from "@/components/Screen";
 import { useFocusEffect } from "expo-router";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { authFetch } from "@/lib/supabase";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -85,8 +86,8 @@ export default function HomeScreen() {
       const endDate = `${currentMonth}-${String(lastDay).padStart(2, "0")}`;
 
       const [transRes, summaryRes] = await Promise.all([
-        fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?start_date=${startDate}&end_date=${endDate}&size=50`),
-        fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary?start_date=${startDate}&end_date=${endDate}`),
+        authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?start_date=${startDate}&end_date=${endDate}&size=50`),
+        authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary?start_date=${startDate}&end_date=${endDate}`),
       ]);
 
       const transData = await transRes.json();

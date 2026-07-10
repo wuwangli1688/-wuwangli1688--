@@ -1,18 +1,27 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { getSupabaseClient } from "../storage/database/supabase-client.js";
+import { authMiddleware } from "../middleware/auth.js";
+import type { AuthenticatedRequest } from "../middleware/auth.js";
 
 const router = Router();
 
-// ==================== 分类接口 ====================
+// All business routes require authentication
+router.use(authMiddleware);
 
-// GET /api/v1/categories - 获取所有分类
-router.get("/categories", async (_req: Request, res: Response) => {
+// ==================== Categories ====================
+
+// GET /api/v1/categories - Get all categories (system defaults + user custom)
+router.get("/categories", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const client = getSupabaseClient();
+    const userId = req.userId!;
+
+    // Get system default categories (user_id is null) + user's own categories
     const { data, error } = await client
       .from("categories")
-      .select("id, name, icon, type, color, sort_order")
+      .select("id, name, icon, type, color, sort_order, user_id")
+      .or(`user_id.is.null,user_id.eq.${userId}`)
       .order("sort_order", { ascending: true });
     if (error) throw new Error(`查询失败: ${error.message}`);
     res.json({ data: data || [] });
@@ -22,18 +31,21 @@ router.get("/categories", async (_req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/categories/by-type?type=expense - 按类型获取分类
-router.get("/categories/by-type", async (req: Request, res: Response) => {
+// GET /api/v1/categories/by-type?type=expense
+router.get("/categories/by-type", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { type } = req.query;
     if (!type || !["income", "expense"].includes(type as string)) {
       return res.status(400).json({ error: "type must be 'income' or 'expense'" });
     }
     const client = getSupabaseClient();
+    const userId = req.userId!;
+
     const { data, error } = await client
       .from("categories")
-      .select("id, name, icon, type, color, sort_order")
+      .select("id, name, icon, type, color, sort_order, user_id")
       .eq("type", type as string)
+      .or(`user_id.is.null,user_id.eq.${userId}`)
       .order("sort_order", { ascending: true });
     if (error) throw new Error(`查询失败: ${error.message}`);
     res.json({ data: data || [] });
@@ -43,17 +55,42 @@ router.get("/categories/by-type", async (req: Request, res: Response) => {
   }
 });
 
-// ==================== 交易记录接口 ====================
+// ==================== Transactions ====================
 
-// GET /api/v1/transactions/summary - 获取汇总统计 (must be before /transactions/:id)
-router.get("/transactions/summary", async (req: Request, res: Response) => {
+// Helper: get visible user IDs for current user
+// Parent sees own + all sub-accounts' approved transactions
+// Child sees only own approved transactions
+async function getVisibleUserIds(client: any, userId: string, role: string, parentUserId: string | null): Promise<string[]> {
+  if (role === 'parent') {
+    // Get sub-account IDs
+    const { data: profiles } = await client
+      .from('user_profiles')
+      .select('id')
+      .eq('parent_user_id', userId)
+      .eq('role', 'child');
+    const subIds = (profiles || []).map((p: any) => p.id);
+    return [userId, ...subIds];
+  } else {
+    return [userId];
+  }
+}
+
+// GET /api/v1/transactions/summary
+router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { start_date, end_date } = req.query;
     const client = getSupabaseClient();
+    const userId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
+
+    const visibleIds = await getVisibleUserIds(client, userId, role, parentUserId ?? null);
 
     let query = client
       .from("transactions")
-      .select("id, amount, type");
+      .select("id, amount, type")
+      .eq("status", "approved")
+      .in("user_id", visibleIds);
 
     if (start_date) {
       query = query.gte("date", start_date as string);
@@ -88,16 +125,23 @@ router.get("/transactions/summary", async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/transactions/stats-by-category - 按分类统计
-router.get("/transactions/stats-by-category", async (req: Request, res: Response) => {
+// GET /api/v1/transactions/stats-by-category
+router.get("/transactions/stats-by-category", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { type = "expense", start_date, end_date } = req.query;
     const client = getSupabaseClient();
+    const userId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
+
+    const visibleIds = await getVisibleUserIds(client, userId, role, parentUserId ?? null);
 
     let query = client
       .from("transactions")
       .select("amount, category_id, categories(name, icon, color)")
-      .eq("type", type as string);
+      .eq("type", type as string)
+      .eq("status", "approved")
+      .in("user_id", visibleIds);
 
     if (start_date) {
       query = query.gte("date", start_date as string);
@@ -123,7 +167,7 @@ router.get("/transactions/stats-by-category", async (req: Request, res: Response
 
     const result = Array.from(categoryMap.entries())
       .map(([category_id, info]) => ({
-        category_id: parseInt(category_id),
+        category_id,
         name: info.name,
         icon: info.icon,
         color: info.color,
@@ -139,8 +183,8 @@ router.get("/transactions/stats-by-category", async (req: Request, res: Response
   }
 });
 
-// GET /api/v1/transactions - 获取交易记录列表
-router.get("/transactions", async (req: Request, res: Response) => {
+// GET /api/v1/transactions
+router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { page = "1", size = "20", type, category_id, start_date, end_date } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
@@ -148,16 +192,24 @@ router.get("/transactions", async (req: Request, res: Response) => {
     const offset = (pageNum - 1) * sizeNum;
 
     const client = getSupabaseClient();
+    const userId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
+
+    const visibleIds = await getVisibleUserIds(client, userId, role, parentUserId ?? null);
+
     let query = client
       .from("transactions")
-      .select("id, amount, type, category_id, note, date, created_at, categories(name, icon, color)", { count: "exact" })
+      .select("id, amount, type, category_id, note, date, status, user_id, created_at, categories(name, icon, color)", { count: "exact" })
+      .eq("status", "approved")
+      .in("user_id", visibleIds)
       .order("date", { ascending: false });
 
     if (type && ["income", "expense"].includes(type as string)) {
       query = query.eq("type", type as string);
     }
     if (category_id) {
-      query = query.eq("category_id", parseInt(category_id as string));
+      query = query.eq("category_id", category_id as string);
     }
     if (start_date) {
       query = query.gte("date", start_date as string);
@@ -184,17 +236,23 @@ router.get("/transactions", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/v1/transactions - 创建交易记录
-router.post("/transactions", async (req: Request, res: Response) => {
+// POST /api/v1/transactions - Create transaction
+// For child accounts, status is 'pending' (needs parent approval)
+// For parent accounts, status is 'approved' directly
+router.post("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { amount, type, category_id, note, date } = req.body;
+    const userId = req.userId!;
+    const role = req.userRole!;
 
     if (!amount || !type || !category_id || !date) {
-      return res.status(400).json({ error: "Missing required fields: amount, type, category_id, date" });
+      return res.status(400).json({ error: "缺少必填字段: amount, type, category_id, date" });
     }
     if (!["income", "expense"].includes(type)) {
       return res.status(400).json({ error: "type must be 'income' or 'expense'" });
     }
+
+    const status = role === 'child' ? 'pending' : 'approved';
 
     const client = getSupabaseClient();
     const { data, error } = await client
@@ -202,40 +260,43 @@ router.post("/transactions", async (req: Request, res: Response) => {
       .insert({
         amount: String(amount),
         type,
-        category_id: parseInt(category_id),
+        category_id,
         note: note || null,
         date,
+        user_id: userId,
+        status,
       })
       .select()
       .single();
 
     if (error) throw new Error(`创建失败: ${error.message}`);
-    res.status(201).json({ data });
+    res.status(201).json({ data, message: status === 'pending' ? '已提交，等待主账号审核' : '创建成功' });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: message });
   }
 });
 
-// PUT /api/v1/transactions/:id - 更新交易记录
-router.put("/transactions/:id", async (req: Request, res: Response) => {
+// PUT /api/v1/transactions/:id
+router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { amount, type, category_id, note, date } = req.body;
+    const userId = req.userId!;
 
     const updateData: Record<string, unknown> = {};
     if (amount !== undefined) updateData.amount = String(amount);
     if (type !== undefined) updateData.type = type;
-    if (category_id !== undefined) updateData.category_id = parseInt(category_id);
+    if (category_id !== undefined) updateData.category_id = category_id;
     if (note !== undefined) updateData.note = note || null;
     if (date !== undefined) updateData.date = date;
-    updateData.updated_at = new Date().toISOString();
 
     const client = getSupabaseClient();
     const { data, error } = await client
       .from("transactions")
       .update(updateData)
-      .eq("id", parseInt(id as string))
+      .eq("id", id)
+      .eq("user_id", userId)
       .select()
       .single();
 
@@ -247,15 +308,17 @@ router.put("/transactions/:id", async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/v1/transactions/:id - 删除交易记录
-router.delete("/transactions/:id", async (req: Request, res: Response) => {
+// DELETE /api/v1/transactions/:id
+router.delete("/transactions/:id", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.userId!;
     const client = getSupabaseClient();
     const { error } = await client
       .from("transactions")
       .delete()
-      .eq("id", parseInt(id as string));
+      .eq("id", id)
+      .eq("user_id", userId);
 
     if (error) throw new Error(`删除失败: ${error.message}`);
     res.json({ data: { success: true } });
@@ -267,7 +330,12 @@ router.delete("/transactions/:id", async (req: Request, res: Response) => {
 
 import exportRouter from "./export.js";
 
-// ==================== 导出接口 ====================
+// ==================== Export ====================
 router.use("/export", exportRouter);
+
+import accountsRouter from "./accounts.js";
+
+// ==================== Account Management ====================
+router.use("/accounts", accountsRouter);
 
 export default router;

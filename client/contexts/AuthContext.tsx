@@ -1,55 +1,228 @@
-// @ts-nocheck
-/**
- * 通用认证上下文
- *
- * 基于固定的 API 接口实现，可复用到其他项目
- * 其他项目使用时，只需修改 @api 的导入路径指向项目的 api 模块
- *
- * 注意：
- * - 如果需要登录/鉴权场景，请扩展本文件，完善 login/logout、token 管理、用户信息获取与刷新等逻辑
- * - 将示例中的占位实现替换为项目实际的接口调用与状态管理
- */
-import React, { createContext, useContext, ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import type { User, Session } from '@supabase/supabase-js';
+import { getSupabase } from '@/lib/supabase';
 
-interface UserOut {
-
-}
-
-interface AuthContextType {
-  user: UserOut | null;
-  token: string | null;
-  isAuthenticated: boolean;
+interface AuthState {
+  user: User | null;
+  session: Session | null;
   isLoading: boolean;
-  login: (token: string) => Promise<void>;
-  logout: () => Promise<void>;
-  updateUser: (userData: Partial<UserOut>) => void;
+  role: string | null;
+  parentUserId: string | null;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+interface AuthContextType extends AuthState {
+  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signUp: (email: string, password: string) => Promise<{ error?: string }>;
+  signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
+  isAuthenticated: boolean;
+  email: string | null;
+}
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const value: AuthContextType = {
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  session: null,
+  isLoading: true,
+  role: null,
+  parentUserId: null,
+  isAuthenticated: false,
+  email: null,
+  signIn: async () => ({}),
+  signUp: async () => ({}),
+  signOut: async () => {},
+  refreshProfile: async () => {},
+});
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<AuthState>({
     user: null,
-    token: null,
-    isAuthenticated: false,
-    isLoading: false,
+    session: null,
+    isLoading: true,
+    role: null,
+    parentUserId: null,
+  });
 
-    // 登录逻辑，根据项目实际情况实现
-    login: async (token: string) => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+  const fetchProfile = useCallback(async (userId: string) => {
+    try {
+      const supabase = await getSupabase();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
 
-    // 登出逻辑，根据项目实际情况实现
-    logout: async () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+      const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+      const res = await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/me`, {
+        headers: { 'x-session': session.access_token },
+      });
 
-    // 更新用户信息，根据项目实际情况实现
-    updateUser: () => {}, // eslint-disable-line @typescript-eslint/no-empty-function
+      if (res.ok) {
+        const profile = await res.json();
+        setState(prev => ({
+          ...prev,
+          role: profile.role || 'parent',
+          parentUserId: profile.parentUserId || null,
+        }));
+      }
+    } catch {
+      // Profile fetch failed, default to parent
+    }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function init() {
+      try {
+        const supabase = await getSupabase();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!mounted) return;
+
+        if (session?.user) {
+          setState({
+            user: session.user,
+            session,
+            isLoading: false,
+            role: null,
+            parentUserId: null,
+          });
+          await fetchProfile(session.user.id);
+        } else {
+          setState(prev => ({ ...prev, isLoading: false }));
+        }
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          (_event, session) => {
+            if (!mounted) return;
+            if (session?.user) {
+              setState(prev => ({
+                ...prev,
+                user: session.user,
+                session,
+                isLoading: false,
+              }));
+              fetchProfile(session.user.id);
+            } else {
+              setState({
+                user: null,
+                session: null,
+                isLoading: false,
+                role: null,
+                parentUserId: null,
+              });
+            }
+          }
+        );
+
+        return () => {
+          mounted = false;
+          subscription.unsubscribe();
+        };
+      } catch {
+        if (mounted) {
+          setState(prev => ({ ...prev, isLoading: false }));
+        }
+      }
+    }
+
+    init();
+  }, [fetchProfile]);
+
+  const signIn = async (email: string, password: string) => {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) return { error: error.message };
+
+    // Manually update state immediately to avoid race condition with navigation
+    if (data.session) {
+      setState({
+        user: data.session.user,
+        session: data.session,
+        isLoading: false,
+        role: null,
+        parentUserId: null,
+      });
+      await fetchProfile(data.session.user.id);
+    }
+
+    return {};
   };
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
 
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-};
+  const signUp = async (email: string, password: string) => {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) return { error: error.message };
+
+    // Auto-confirm is enabled, so session should be available
+    if (data.session) {
+      setState({
+        user: data.session.user,
+        session: data.session,
+        isLoading: false,
+        role: null,
+        parentUserId: null,
+      });
+
+      // Create profile as parent
+      const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+      try {
+        await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/ensure-profile`, {
+          method: 'POST',
+          headers: {
+            'x-session': data.session.access_token,
+            'Content-Type': 'application/json',
+          },
+        });
+        await fetchProfile(data.session.user.id);
+      } catch {
+        // Profile creation failed, will retry on next access
+      }
+    }
+
+    return {};
+  };
+
+  const signOut = async () => {
+    const supabase = await getSupabase();
+    await supabase.auth.signOut();
+    setState({
+      user: null,
+      session: null,
+      isLoading: false,
+      role: null,
+      parentUserId: null,
+    });
+  };
+
+  const refreshProfile = async () => {
+    if (state.user) {
+      await fetchProfile(state.user.id);
+    }
+  };
+
+  return (
+    <AuthContext.Provider
+      value={{
+        ...state,
+        isAuthenticated: !!state.session,
+        email: state.user?.email ?? null,
+        signIn,
+        signUp,
+        signOut,
+        refreshProfile,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}

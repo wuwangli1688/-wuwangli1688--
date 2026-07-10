@@ -11,6 +11,7 @@ import { Screen } from "@/components/Screen";
 import { useFocusEffect } from "expo-router";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { authFetch } from "@/lib/supabase";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -62,7 +63,7 @@ export default function StatsScreen() {
       const lastDay = new Date(year, month, 0).getDate();
       const endDate = `${currentMonth}-${String(lastDay).padStart(2, "0")}`;
 
-      const res = await fetch(
+      const res = await authFetch(
         `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/stats-by-category?type=${type}&start_date=${startDate}&end_date=${endDate}`
       );
       const data = await res.json();

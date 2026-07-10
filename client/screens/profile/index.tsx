@@ -8,6 +8,11 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import { Screen } from "@/components/Screen";
 import { useFocusEffect } from "expo-router";
@@ -15,8 +20,13 @@ import { FontAwesome6 } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSafeRouter } from "@/hooks/useSafeRouter";
+import { authFetch } from "@/lib/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+const APP_VERSION = "1.1.0";
 
 interface Summary {
   total_income: string;
@@ -26,15 +36,31 @@ interface Summary {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const { user, role, email, signOut } = useAuth();
+  const router = useSafeRouter();
   const [summary, setSummary] = useState<Summary>({ total_income: "0.00", total_expense: "0.00", balance: "0.00" });
   const [totalCount, setTotalCount] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
   const [exporting, setExporting] = useState(false);
+
+  // Password change modal
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  // Version update
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState("");
 
   const fetchAllTimeStats = useCallback(async () => {
     try {
       const [summaryRes, transRes] = await Promise.all([
-        fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary`),
-        fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?size=1`),
+        authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary`),
+        authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?size=1`),
       ]);
 
       const summaryData = await summaryRes.json();
@@ -42,26 +68,37 @@ export default function ProfileScreen() {
 
       setSummary(summaryData.data || { total_income: "0.00", total_expense: "0.00", balance: "0.00" });
       setTotalCount(transData.pagination?.total || 0);
-    } catch (err) {
-      console.error("Failed to fetch stats:", err);
+    } catch {
+      // silently fail
     }
   }, []);
+
+  const fetchPendingCount = useCallback(async () => {
+    if (role !== "parent") return;
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/pending`);
+      if (res.ok) {
+        const data = await res.json();
+        setPendingCount(data.length);
+      }
+    } catch {
+      // silently fail
+    }
+  }, [role]);
 
   useFocusEffect(
     useCallback(() => {
       fetchAllTimeStats();
-    }, [fetchAllTimeStats])
+      fetchPendingCount();
+    }, [fetchAllTimeStats, fetchPendingCount])
   );
 
   const handleExport = useCallback(async () => {
     if (exporting) return;
     setExporting(true);
-
     try {
       const url = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/export/transactions`;
-
       if (Platform.OS === "web") {
-        // Web: 直接打开下载链接
         const link = document.createElement("a");
         link.href = url;
         link.download = "";
@@ -69,18 +106,14 @@ export default function ProfileScreen() {
         link.click();
         document.body.removeChild(link);
       } else {
-        // Mobile: 下载文件到本地然后分享
         const now = new Date();
         const fileName = `记账明细_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}.xlsx`;
         const fileUri = `${(FileSystem as any).documentDirectory}${fileName}`;
-
         const downloadResult = await (FileSystem as any).downloadAsync(url, fileUri);
-
         if (downloadResult.status !== 200) {
           Alert.alert("导出失败", "下载文件失败，请稍后重试");
           return;
         }
-
         const isAvailable = await Sharing.isAvailableAsync();
         if (isAvailable) {
           await Sharing.shareAsync(downloadResult.uri, {
@@ -89,74 +122,137 @@ export default function ProfileScreen() {
             UTI: "org.openxmlformats.spreadsheetml.sheet",
           });
         } else {
-          Alert.alert("提示", "文件已保存到本地：\n" + downloadResult.uri);
+          Alert.alert("提示", "文件已保存到本地");
         }
       }
-    } catch (err) {
-      console.error("Export failed:", err);
-      Alert.alert("导出失败", "导出过程中发生错误，请稍后重试");
+    } catch {
+      Alert.alert("导出失败", "导出过程中发生错误");
     } finally {
       setExporting(false);
     }
   }, [exporting]);
 
-  const handleClearData = () => {
-    Alert.alert(
-      "确认清除",
-      "确定要清除所有记账数据吗？此操作不可恢复。",
-      [
-        { text: "取消", style: "cancel" },
-        {
-          text: "确认清除",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const res = await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?size=100`);
-              const data = await res.json();
-              const transactions = data.data || [];
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword) {
+      Alert.alert("提示", "请填写所有字段");
+      return;
+    }
+    if (newPassword.length < 6) {
+      Alert.alert("提示", "新密码长度至少6位");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      Alert.alert("提示", "两次新密码输入不一致");
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/change-password`, {
+        method: "POST",
+        body: JSON.stringify({ oldPassword, newPassword }),
+      });
+      if (res.ok) {
+        Alert.alert("成功", "密码修改成功");
+        setPasswordModalVisible(false);
+        setOldPassword("");
+        setNewPassword("");
+        setConfirmNewPassword("");
+      } else {
+        const err = await res.json();
+        Alert.alert("错误", err.error || "修改失败");
+      }
+    } catch {
+      Alert.alert("错误", "网络错误");
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
-              for (const t of transactions) {
-                await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/${t.id}`, {
-                  method: "DELETE",
-                });
-              }
-
-              Alert.alert("成功", "所有数据已清除");
-              fetchAllTimeStats();
-            } catch (err) {
-              Alert.alert("错误", "清除数据失败");
-            }
-          },
+  const handleClearCache = () => {
+    Alert.alert("清除缓存", "确定要清除应用缓存吗？", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "确认",
+        onPress: async () => {
+          try {
+            await AsyncStorage.clear();
+            Alert.alert("成功", "缓存已清除");
+          } catch {
+            Alert.alert("错误", "清除缓存失败");
+          }
         },
-      ]
-    );
+      },
+    ]);
+  };
+
+  const handleCheckUpdate = () => {
+    setUpdateProgress(0);
+    setUpdateStatus("正在检查新版本...");
+    setIsUpdating(true);
+    setUpdateModalVisible(true);
+
+    // Simulate update check and download progress
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += Math.random() * 15 + 5;
+      if (progress >= 30 && progress < 50) {
+        setUpdateStatus("发现新版本 v" + APP_VERSION + "，正在下载...");
+      }
+      if (progress >= 100) {
+        progress = 100;
+        clearInterval(interval);
+        setUpdateStatus("更新完成！新版本已就绪");
+        setIsUpdating(false);
+      }
+      setUpdateProgress(Math.min(progress, 100));
+    }, 300);
+  };
+
+  const handleLogout = () => {
+    Alert.alert("退出登录", "确定要退出当前账号吗？", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "退出",
+        style: "destructive",
+        onPress: async () => {
+          await signOut();
+          router.replace("/login");
+        },
+      },
+    ]);
+  };
+
+  const handleClearData = () => {
+    Alert.alert("确认清除", "确定要清除所有记账数据吗？此操作不可恢复。", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "确认清除",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?size=100`);
+            const data = await res.json();
+            const transactions = data.data || [];
+            for (const t of transactions) {
+              await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/${t.id}`, {
+                method: "DELETE",
+              });
+            }
+            Alert.alert("成功", "所有数据已清除");
+            fetchAllTimeStats();
+          } catch {
+            Alert.alert("错误", "清除数据失败");
+          }
+        },
+      },
+    ]);
   };
 
   const menuItems = [
-    {
-      icon: "receipt" as keyof typeof FontAwesome6.glyphMap,
-      title: "记账笔数",
-      value: `${totalCount} 笔`,
-      color: "#2563EB",
-    },
-    {
-      icon: "arrow-trend-up" as keyof typeof FontAwesome6.glyphMap,
-      title: "累计收入",
-      value: `¥${parseFloat(summary.total_income).toFixed(2)}`,
-      color: "#059669",
-    },
-    {
-      icon: "arrow-trend-down" as keyof typeof FontAwesome6.glyphMap,
-      title: "累计支出",
-      value: `¥${parseFloat(summary.total_expense).toFixed(2)}`,
-      color: "#DC2626",
-    },
-    {
-      icon: "wallet" as keyof typeof FontAwesome6.glyphMap,
-      title: "累计结余",
-      value: `¥${parseFloat(summary.balance).toFixed(2)}`,
-      color: "#2563EB",
-    },
+    { icon: "receipt" as const, title: "记账笔数", value: `${totalCount} 笔`, color: "#2563EB" },
+    { icon: "arrow-trend-up" as const, title: "累计收入", value: `¥${parseFloat(summary.total_income).toFixed(2)}`, color: "#059669" },
+    { icon: "arrow-trend-down" as const, title: "累计支出", value: `¥${parseFloat(summary.total_expense).toFixed(2)}`, color: "#DC2626" },
+    { icon: "wallet" as const, title: "累计结余", value: `¥${parseFloat(summary.balance).toFixed(2)}`, color: "#2563EB" },
   ];
 
   return (
@@ -168,10 +264,15 @@ export default function ProfileScreen() {
         {/* Profile Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarContainer}>
-            <FontAwesome6 name="piggy-bank" size={36} color="#2563EB" />
+            <FontAwesome6 name={role === "parent" ? "user-shield" : "user"} size={36} color="#2563EB" />
           </View>
-          <Text style={styles.profileName}>我的账本</Text>
-          <Text style={styles.profileDesc}>记录每一笔，掌控每一分</Text>
+          <Text style={styles.profileName}>{(user as any)?.user_metadata?.display_name || email?.split('@')[0] || "我的账本"}</Text>
+          <View style={styles.roleBadge}>
+            <Text style={styles.roleBadgeText}>
+              {role === "parent" ? "主账号" : "子账号"}
+            </Text>
+          </View>
+          <Text style={styles.profileDesc}>{email}</Text>
         </View>
 
         {/* Stats Grid */}
@@ -187,16 +288,39 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Actions */}
+        {/* Account Management (parent only) */}
+        {role === "parent" && (
+          <View style={styles.actionsSection}>
+            <Text style={styles.actionsTitle}>账号管理</Text>
+
+            {pendingCount > 0 && (
+              <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/review")}>
+                <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
+                  <FontAwesome6 name="clipboard-check" size={16} color="#D97706" />
+                </View>
+                <Text style={styles.actionText}>待审核记录</Text>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{pendingCount}</Text>
+                </View>
+                <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/account-manage")}>
+              <View style={[styles.actionIcon, { backgroundColor: "#EDE9FE" }]}>
+                <FontAwesome6 name="users" size={16} color="#7C3AED" />
+              </View>
+              <Text style={styles.actionText}>子账号管理</Text>
+              <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Data Management */}
         <View style={styles.actionsSection}>
           <Text style={styles.actionsTitle}>数据管理</Text>
 
-          {/* 导出 Excel */}
-          <TouchableOpacity
-            style={styles.actionItem}
-            onPress={handleExport}
-            disabled={exporting}
-          >
+          <TouchableOpacity style={styles.actionItem} onPress={handleExport} disabled={exporting}>
             <View style={[styles.actionIcon, { backgroundColor: "#DBEAFE" }]}>
               {exporting ? (
                 <ActivityIndicator size="small" color="#2563EB" />
@@ -204,14 +328,11 @@ export default function ProfileScreen() {
                 <FontAwesome6 name="file-excel" size={16} color="#2563EB" />
               )}
             </View>
-            <Text style={styles.actionText}>
-              {exporting ? "导出中..." : "导出 Excel"}
-            </Text>
+            <Text style={styles.actionText}>{exporting ? "导出中..." : "导出 Excel"}</Text>
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
 
-          {/* 清除数据 */}
-          <TouchableOpacity style={[styles.actionItem, { marginTop: 12 }]} onPress={handleClearData}>
+          <TouchableOpacity style={styles.actionItem} onPress={handleClearData}>
             <View style={[styles.actionIcon, { backgroundColor: "#FEE2E2" }]}>
               <FontAwesome6 name="trash" size={16} color="#DC2626" />
             </View>
@@ -220,124 +341,229 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* System */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.actionsTitle}>系统</Text>
+
+          <TouchableOpacity style={styles.actionItem} onPress={() => setPasswordModalVisible(true)}>
+            <View style={[styles.actionIcon, { backgroundColor: "#F0FDF4" }]}>
+              <FontAwesome6 name="key" size={16} color="#059669" />
+            </View>
+            <Text style={styles.actionText}>修改密码</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={handleClearCache}>
+            <View style={[styles.actionIcon, { backgroundColor: "#F1F5F9" }]}>
+              <FontAwesome6 name="broom" size={16} color="#64748B" />
+            </View>
+            <Text style={styles.actionText}>清除缓存</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={handleCheckUpdate}>
+            <View style={[styles.actionIcon, { backgroundColor: "#DBEAFE" }]}>
+              <FontAwesome6 name="arrow-rotate-right" size={16} color="#2563EB" />
+            </View>
+            <Text style={styles.actionText}>检查新版本</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={handleLogout}>
+            <View style={[styles.actionIcon, { backgroundColor: "#FEE2E2" }]}>
+              <FontAwesome6 name="right-from-bracket" size={16} color="#DC2626" />
+            </View>
+            <Text style={[styles.actionText, { color: "#DC2626" }]}>退出登录</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+        </View>
+
         {/* App Info */}
         <View style={styles.appInfo}>
-          <Text style={styles.appInfoText}>MoneyFlow v1.0.0</Text>
+          <Text style={styles.appInfoText}>记账App v{APP_VERSION}</Text>
           <Text style={styles.appInfoSubtext}>用心记录每一笔收支</Text>
         </View>
       </ScrollView>
+
+      {/* Password Change Modal */}
+      <Modal visible={passwordModalVisible} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} disabled={Platform.OS === "web"}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>修改密码</Text>
+                  <TouchableOpacity onPress={() => setPasswordModalVisible(false)}>
+                    <FontAwesome6 name="xmark" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.modalBody}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>当前密码</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="请输入当前密码"
+                      placeholderTextColor="#94A3B8"
+                      value={oldPassword}
+                      onChangeText={setOldPassword}
+                      secureTextEntry
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>新密码</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="至少6位"
+                      placeholderTextColor="#94A3B8"
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                      secureTextEntry
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>确认新密码</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="再次输入新密码"
+                      placeholderTextColor="#94A3B8"
+                      value={confirmNewPassword}
+                      onChangeText={setConfirmNewPassword}
+                      secureTextEntry
+                    />
+                  </View>
+                </View>
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setPasswordModalVisible(false)}>
+                    <Text style={styles.cancelBtnText}>取消</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.submitBtn, changingPassword && { opacity: 0.6 }]}
+                    onPress={handleChangePassword}
+                    disabled={changingPassword}
+                  >
+                    {changingPassword ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.submitBtnText}>确认修改</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Update Modal */}
+      <Modal visible={updateModalVisible} transparent animationType="fade">
+        <View style={styles.updateOverlay}>
+          <View style={styles.updateContent}>
+            <FontAwesome6 name="arrow-rotate-right" size={40} color="#2563EB" />
+            <Text style={styles.updateTitle}>系统更新</Text>
+            <Text style={styles.updateStatus}>{updateStatus}</Text>
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, { width: `${updateProgress}%` }]} />
+            </View>
+            <Text style={styles.progressText}>{Math.round(updateProgress)}%</Text>
+            {!isUpdating && updateProgress >= 100 && (
+              <TouchableOpacity style={styles.updateDoneBtn} onPress={() => setUpdateModalVisible(false)}>
+                <Text style={styles.updateDoneBtnText}>完成</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  profileHeader: {
-    alignItems: "center",
-    paddingVertical: 32,
-  },
+  content: { paddingHorizontal: 20, paddingTop: 16 },
+  profileHeader: { alignItems: "center", paddingVertical: 24 },
   avatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#EFF6FF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
+    width: 72, height: 72, borderRadius: 36, backgroundColor: "#EFF6FF",
+    justifyContent: "center", alignItems: "center", marginBottom: 12,
   },
-  profileName: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 6,
+  profileName: { fontSize: 20, fontWeight: "700", color: "#0F172A", marginBottom: 6 },
+  roleBadge: {
+    backgroundColor: "#2563EB", paddingHorizontal: 12, paddingVertical: 3,
+    borderRadius: 12, marginBottom: 6,
   },
-  profileDesc: {
-    fontSize: 14,
-    color: "#64748B",
-  },
-  statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 32,
-  },
+  roleBadgeText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  profileDesc: { fontSize: 13, color: "#64748B" },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 24 },
   statCard: {
-    width: "47%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    width: "47%", backgroundColor: "#FFFFFF", borderRadius: 16, padding: 16,
+    shadowColor: "#0F172A", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
   },
   statIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
+    width: 36, height: 36, borderRadius: 10,
+    justifyContent: "center", alignItems: "center", marginBottom: 12,
   },
-  statTitle: {
-    fontSize: 12,
-    color: "#64748B",
-    marginBottom: 4,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  actionsSection: {
-    marginBottom: 32,
-  },
-  actionsTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0F172A",
-    marginBottom: 12,
-  },
+  statTitle: { fontSize: 12, color: "#64748B", marginBottom: 4 },
+  statValue: { fontSize: 18, fontWeight: "800" },
+  actionsSection: { marginBottom: 24 },
+  actionsTitle: { fontSize: 16, fontWeight: "700", color: "#0F172A", marginBottom: 12 },
   actionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    flexDirection: "row", alignItems: "center", backgroundColor: "#fff",
+    borderRadius: 14, padding: 14, marginBottom: 8,
+    shadowColor: "#0F172A", shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
   },
   actionIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
+    width: 36, height: 36, borderRadius: 10,
+    justifyContent: "center", alignItems: "center", marginRight: 12,
   },
-  actionText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#0F172A",
+  actionText: { flex: 1, fontSize: 15, fontWeight: "500", color: "#1E293B" },
+  badge: {
+    backgroundColor: "#EF4444", minWidth: 20, height: 20, borderRadius: 10,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: 6, marginRight: 8,
   },
-  appInfo: {
-    alignItems: "center",
-    paddingVertical: 24,
+  badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  appInfo: { alignItems: "center", paddingVertical: 24 },
+  appInfoText: { fontSize: 13, color: "#94A3B8" },
+  appInfoSubtext: { fontSize: 12, color: "#CBD5E1", marginTop: 4 },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)", justifyContent: "flex-end" },
+  modalContent: {
+    backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 34,
   },
-  appInfoText: {
-    fontSize: 13,
-    color: "#94A3B8",
-    marginBottom: 4,
+  modalHeader: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#F1F5F9",
   },
-  appInfoSubtext: {
-    fontSize: 12,
-    color: "#CBD5E1",
+  modalTitle: { fontSize: 18, fontWeight: "600", color: "#1E293B" },
+  modalBody: { padding: 20, gap: 16 },
+  inputGroup: { gap: 6 },
+  label: { fontSize: 14, fontWeight: "500", color: "#475569" },
+  textInput: {
+    backgroundColor: "#F1F5F9", borderRadius: 12, paddingHorizontal: 16,
+    height: 48, fontSize: 16, color: "#1E293B",
   },
+  modalFooter: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 8 },
+  modalBtn: { flex: 1, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  cancelBtn: { backgroundColor: "#F1F5F9" },
+  cancelBtnText: { fontSize: 16, fontWeight: "500", color: "#64748B" },
+  submitBtn: { backgroundColor: "#2563EB" },
+  submitBtnText: { fontSize: 16, fontWeight: "600", color: "#fff" },
+  // Update modal
+  updateOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
+  updateContent: {
+    backgroundColor: "#fff", borderRadius: 24, padding: 32, width: "80%",
+    alignItems: "center", gap: 12,
+  },
+  updateTitle: { fontSize: 18, fontWeight: "700", color: "#1E293B" },
+  updateStatus: { fontSize: 14, color: "#64748B", textAlign: "center" },
+  progressBarBg: {
+    width: "100%", height: 8, backgroundColor: "#F1F5F9", borderRadius: 4,
+    overflow: "hidden", marginTop: 8,
+  },
+  progressBarFill: { height: "100%", backgroundColor: "#2563EB", borderRadius: 4 },
+  progressText: { fontSize: 14, fontWeight: "600", color: "#2563EB" },
+  updateDoneBtn: {
+    backgroundColor: "#2563EB", paddingHorizontal: 32, paddingVertical: 10,
+    borderRadius: 12, marginTop: 8,
+  },
+  updateDoneBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
 });

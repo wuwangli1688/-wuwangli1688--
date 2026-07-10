@@ -1,20 +1,37 @@
 import { Router } from "express";
-import type { Request, Response } from "express";
+import type { Response } from "express";
 import ExcelJS from "exceljs";
 import { getSupabaseClient } from "../storage/database/supabase-client.js";
+import type { AuthenticatedRequest } from "../middleware/auth.js";
 
 const router = Router();
 
-// GET /api/v1/export/transactions - 导出交易记录为 Excel
-router.get("/transactions", async (req: Request, res: Response) => {
+// GET /api/v1/export/transactions - Export transactions to Excel
+router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { start_date, end_date } = req.query;
     const client = getSupabaseClient();
+    const userId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
 
-    // 查询所有交易记录（按日期升序）
+    // Determine visible user IDs
+    let visibleIds = [userId];
+    if (role === 'parent') {
+      const { data: profiles } = await client
+        .from('user_profiles')
+        .select('id')
+        .eq('parent_user_id', userId)
+        .eq('role', 'child');
+      const subIds = (profiles || []).map((p: any) => p.id);
+      visibleIds = [userId, ...subIds];
+    }
+
     let query = client
       .from("transactions")
       .select("id, amount, type, category_id, note, date, categories(name)")
+      .eq("status", "approved")
+      .in("user_id", visibleIds)
       .order("date", { ascending: true });
 
     if (start_date) {
@@ -29,11 +46,9 @@ router.get("/transactions", async (req: Request, res: Response) => {
 
     const transactions = data || [];
 
-    // 创建工作簿
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Sheet1");
 
-    // 设置列宽
     worksheet.columns = [
       { header: "日期", key: "date", width: 14 },
       { header: "序号", key: "seq", width: 8 },
@@ -45,14 +60,14 @@ router.get("/transactions", async (req: Request, res: Response) => {
       { header: "备注", key: "note", width: 20 },
     ];
 
-    // 设置标题行样式（合并单元格）
+    // Title row
     worksheet.mergeCells(1, 1, 1, 8);
     const titleCell = worksheet.getCell("A1");
     titleCell.value = "日记表";
     titleCell.alignment = { horizontal: "center", vertical: "middle" };
     titleCell.font = { size: 14, bold: true };
 
-    // 设置表头行样式
+    // Header row style
     const headerRow = worksheet.getRow(2);
     headerRow.font = { bold: true };
     headerRow.alignment = { vertical: "middle" };
@@ -65,7 +80,6 @@ router.get("/transactions", async (req: Request, res: Response) => {
       };
     });
 
-    // 计算余额并写入数据
     let balance = 0;
     let seq = 1;
 
@@ -79,7 +93,7 @@ router.get("/transactions", async (req: Request, res: Response) => {
         balance -= amount;
       }
 
-      const dateStr = t.date.split("T")[0]; // YYYY-MM-DD
+      const dateStr = t.date.split("T")[0];
       const isIncome = t.type === "income";
 
       const rowData: Record<string, unknown> = {
@@ -103,7 +117,6 @@ router.get("/transactions", async (req: Request, res: Response) => {
         };
       });
 
-      // 设置数字格式
       const incomeCell = row.getCell("income");
       const expenseCell = row.getCell("expense");
       const balanceCell = row.getCell("balance");
@@ -118,7 +131,6 @@ router.get("/transactions", async (req: Request, res: Response) => {
       seq++;
     }
 
-    // 如果没有数据，添加一行空行保持格式
     if (transactions.length === 0) {
       const row = worksheet.addRow({
         date: new Date().toISOString().split("T")[0],
@@ -140,7 +152,6 @@ router.get("/transactions", async (req: Request, res: Response) => {
       });
     }
 
-    // 写入 buffer 并返回
     const buffer = await workbook.xlsx.writeBuffer();
 
     res.setHeader(

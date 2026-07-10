@@ -14,6 +14,7 @@ import { Screen } from "@/components/Screen";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
+import { authFetch } from "@/lib/supabase";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -63,7 +64,7 @@ export default function AddScreen() {
 
   const fetchCategories = async () => {
     try {
-      const res = await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/categories/by-type?type=${type}`);
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/categories/by-type?type=${type}`);
       const data = await res.json();
       setCategories(data.data || []);
       setSelectedCategory(null);
@@ -89,7 +90,7 @@ export default function AddScreen() {
        * 接口：POST /api/v1/transactions
        * Body 参数：amount: string, type: string, category_id: number, note?: string, date: string
        */
-      const res = await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions`, {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
