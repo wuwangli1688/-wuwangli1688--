@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import apiRouter from "./routes/index.js";
 
 const app = express();
 const port = process.env.PORT || 9091;
@@ -14,6 +15,8 @@ app.get('/api/v1/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+// API routes
+app.use('/api/v1', apiRouter);
 
 app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}/`);
