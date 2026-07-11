@@ -40,12 +40,12 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     if (storeIds.length === 0) {
-      return res.json([]);
+      return res.json({ data: [] });
     }
 
     const { data: stores, error } = await client
       .from('stores')
-      .select('id, name, owner_id, created_at')
+      .select('id, name, notes, owner_id, created_at')
       .in('id', storeIds)
       .order('created_at', { ascending: true });
 
@@ -62,7 +62,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
       })
     );
 
-    return res.json(storesWithCounts);
+    return res.json({ data: storesWithCounts });
   } catch (error) {
     console.error('Get stores error:', error);
     return res.status(500).json({ error: '获取店铺列表失败' });
@@ -72,7 +72,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
 // POST /api/v1/stores - Create a store (parent only)
 router.post('/', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name } = req.body;
+    const { name, notes } = req.body;
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ error: '请提供店铺名称' });
     }
@@ -82,7 +82,7 @@ router.post('/', requireParent, async (req: AuthenticatedRequest, res: Response)
 
     const { data, error } = await client
       .from('stores')
-      .insert({ name: name.trim(), ownerId })
+      .insert({ name: name.trim(), notes: notes || null, owner_id: ownerId })
       .select()
       .single();
 
@@ -99,7 +99,7 @@ router.post('/', requireParent, async (req: AuthenticatedRequest, res: Response)
 router.put('/:id', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name } = req.body;
+    const { name, notes } = req.body;
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ error: '请提供店铺名称' });
     }
@@ -119,9 +119,12 @@ router.put('/:id', requireParent, async (req: AuthenticatedRequest, res: Respons
       return res.status(404).json({ error: '店铺不存在或无权操作' });
     }
 
+    const updateData: any = { name: name.trim() };
+    if (notes !== undefined) updateData.notes = notes || null;
+
     const { error } = await client
       .from('stores')
-      .update({ name: name.trim() })
+      .update(updateData)
       .eq('id', id);
 
     if (error) throw error;

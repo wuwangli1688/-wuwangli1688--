@@ -24,6 +24,7 @@ const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 interface Store {
   id: string;
   name: string;
+  notes: string | null;
   created_at: string;
 }
 
@@ -48,6 +49,7 @@ export default function StoresScreen() {
   const [storeModalVisible, setStoreModalVisible] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [storeName, setStoreName] = useState("");
+  const [storeNotes, setStoreNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Permission modal
@@ -58,8 +60,8 @@ export default function StoresScreen() {
   const fetchStores = useCallback(async () => {
     try {
       const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores`);
-      const data = await res.json();
-      setStores(data.data || []);
+      const json = await res.json();
+      setStores(json.data || []);
     } catch (err) {
       console.error("Failed to fetch stores:", err);
     }
@@ -86,12 +88,14 @@ export default function StoresScreen() {
   const handleAddStore = () => {
     setEditingStore(null);
     setStoreName("");
+    setStoreNotes("");
     setStoreModalVisible(true);
   };
 
   const handleEditStore = (store: Store) => {
     setEditingStore(store);
     setStoreName(store.name);
+    setStoreNotes(store.notes || "");
     setStoreModalVisible(true);
   };
 
@@ -107,14 +111,14 @@ export default function StoresScreen() {
         /**
          * 服务端文件：server/src/routes/stores.ts
          * 接口：PUT /api/v1/stores/:id
-         * Body 参数：name: string
+         * Body 参数：name: string, notes?: string
          */
         const res = await authFetch(
           `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores/${editingStore.id}`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: storeName.trim() }),
+            body: JSON.stringify({ name: storeName.trim(), notes: storeNotes.trim() || null }),
           }
         );
         if (!res.ok) throw new Error("更新失败");
@@ -122,12 +126,12 @@ export default function StoresScreen() {
         /**
          * 服务端文件：server/src/routes/stores.ts
          * 接口：POST /api/v1/stores
-         * Body 参数：name: string
+         * Body 参数：name: string, notes?: string
          */
         const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: storeName.trim() }),
+          body: JSON.stringify({ name: storeName.trim(), notes: storeNotes.trim() || null }),
         });
         if (!res.ok) throw new Error("创建失败");
       }
@@ -246,6 +250,9 @@ export default function StoresScreen() {
                     </View>
                     <View style={styles.storeInfo}>
                       <Text style={styles.storeName}>{store.name}</Text>
+                      {store.notes ? (
+                        <Text style={styles.storeNotes} numberOfLines={1}>{store.notes}</Text>
+                      ) : null}
                     </View>
                     {isParent && (
                       <View style={styles.storeActions}>
@@ -330,6 +337,16 @@ export default function StoresScreen() {
                       value={storeName}
                       onChangeText={setStoreName}
                       maxLength={50}
+                    />
+                    <Text style={[styles.inputLabel, { marginTop: 16 }]}>备注</Text>
+                    <TextInput
+                      style={[styles.textInput, styles.notesInput]}
+                      placeholder="填写店铺备注信息（可选）"
+                      placeholderTextColor="#94A3B8"
+                      value={storeNotes}
+                      onChangeText={setStoreNotes}
+                      maxLength={200}
+                      multiline
                     />
                   </View>
 
@@ -525,6 +542,11 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#0F172A",
   },
+  storeNotes: {
+    fontSize: 12,
+    color: "#94A3B8",
+    marginTop: 4,
+  },
   storeActions: {
     flexDirection: "row",
     gap: 8,
@@ -634,6 +656,10 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     borderWidth: 1,
     borderColor: "#E2E8F0",
+  },
+  notesInput: {
+    minHeight: 80,
+    textAlignVertical: "top",
   },
   modalBtn: {
     flex: 1,

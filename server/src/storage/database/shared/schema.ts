@@ -38,6 +38,7 @@ export const stores = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     name: varchar("name", { length: 100 }).notNull(),
+    notes: text("notes"),
     ownerId: uuid("owner_id").notNull(), // parent user id who owns this store
     createdAt: timestamp("created_at", { mode: "string" }).default(
       sql`CURRENT_TIMESTAMP`
