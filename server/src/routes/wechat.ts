@@ -6,6 +6,19 @@ import { authMiddleware, type AuthenticatedRequest } from "../middleware/auth.js
 const router = Router();
 
 /**
+ * Convert a flexible account input to a valid Supabase email.
+ * Must match the frontend toSupabaseEmail function exactly.
+ */
+function toSupabaseEmail(account: string): string {
+  const trimmed = account.trim();
+  if (trimmed.includes("@") && trimmed.includes(".")) {
+    return trimmed.toLowerCase();
+  }
+  const encoded = encodeURIComponent(trimmed).toLowerCase();
+  return `${encoded}@jizhangapp.local`.toLowerCase();
+}
+
+/**
  * POST /api/v1/wechat/login
  * 微信小程序登录（无需认证）
  * Body: { code: string, nickname?: string, avatarUrl?: string }
@@ -223,8 +236,7 @@ router.post("/bindAccount", async (req: Request, res: Response) => {
     }
 
     // 验证账号密码
-    const isEmail = account.includes("@");
-    const email = isEmail ? account : `${account}@记账app.local`;
+    const email = toSupabaseEmail(account);
 
     const { data: signInData, error: signInError } =
       await supabase.auth.signInWithPassword({ email, password });

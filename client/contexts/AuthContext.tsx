@@ -6,15 +6,18 @@ const BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
 /**
  * Convert a flexible account input (email, phone, or username) to a valid Supabase email.
- * - If it contains '@' and '.', treat as email
- * - Otherwise, append @记账app.local to make it a valid email for Supabase
+ * - If it contains '@' and '.', treat as email (must be ASCII)
+ * - Otherwise, percent-encode the account name with @jizhangapp.local domain
+ * Supabase only accepts ASCII email addresses, so non-ASCII characters are percent-encoded.
  */
 function toSupabaseEmail(account: string): string {
   const trimmed = account.trim();
   if (trimmed.includes('@') && trimmed.includes('.')) {
     return trimmed.toLowerCase();
   }
-  return `${trimmed}@记账app.local`.toLowerCase();
+  // Percent-encode non-ASCII characters safely (works in both browser and Node.js)
+  const encoded = encodeURIComponent(trimmed).toLowerCase();
+  return `${encoded}@jizhangapp.local`;
 }
 
 interface AuthState {

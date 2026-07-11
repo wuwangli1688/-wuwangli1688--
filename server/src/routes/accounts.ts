@@ -8,6 +8,16 @@ import { eq, and, desc, gte, lte, inArray, isNull, or, sql } from 'drizzle-orm';
 
 const router = Router();
 
+// Utility: convert flexible account input to Supabase email (must match frontend)
+function toSupabaseEmail(account: string): string {
+  const trimmed = account.trim();
+  if (trimmed.includes('@') && trimmed.includes('.')) {
+    return trimmed.toLowerCase();
+  }
+  const encoded = encodeURIComponent(trimmed).toLowerCase();
+  return `${encoded}@jizhangapp.local`;
+}
+
 // ============ Password Reset (no auth required) ============
 // POST /api/v1/accounts/reset-password-request - Send reset code
 router.post('/reset-password-request', async (req: Request, res: Response) => {
@@ -19,19 +29,8 @@ router.post('/reset-password-request', async (req: Request, res: Response) => {
 
     const adminClient = getSupabaseClient();
 
-    // Check if user exists (try both raw email and @记账app.local format)
-    const { data: users } = await adminClient.auth.admin.listUsers();
-    const foundUser = users.users.find((u: { email?: string }) =>
-      u.email?.toLowerCase() === email.toLowerCase() ||
-      u.email?.toLowerCase() === `${email}@记账app.local`.toLowerCase()
-    );
-
-    if (!foundUser) {
-      // Don't reveal whether the email exists
-      return res.json({ message: '如果该邮箱已注册，重置密码链接已发送' });
-    }
-
-    const targetEmail = foundUser.email!;
+    // Use toSupabaseEmail to find the user consistently
+    const targetEmail = toSupabaseEmail(email);
 
     const { error } = await adminClient.auth.resetPasswordForEmail(targetEmail, {
       redirectTo: process.env.EXPO_PUBLIC_BACKEND_BASE_URL || 'http://localhost:5000',
@@ -62,20 +61,12 @@ router.post('/reset-password', async (req: Request, res: Response) => {
 
     const adminClient = getSupabaseClient();
 
-    // Find user by email
-    const { data: users } = await adminClient.auth.admin.listUsers();
-    const foundUser = users.users.find((u: { email?: string }) =>
-      u.email?.toLowerCase() === email.toLowerCase() ||
-      u.email?.toLowerCase() === `${email}@记账app.local`.toLowerCase()
-    );
-
-    if (!foundUser) {
-      return res.status(400).json({ error: '该账号未注册' });
-    }
+    // Use toSupabaseEmail to find the user consistently
+    const targetEmail = toSupabaseEmail(email);
 
     // Verify OTP code
     const { data: verifyData, error: verifyError } = await adminClient.auth.verifyOtp({
-      email: foundUser.email!,
+      email: targetEmail,
       token: code,
       type: 'recovery',
     });
