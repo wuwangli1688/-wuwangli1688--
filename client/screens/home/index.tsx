@@ -1,48 +1,44 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
   RefreshControl,
 } from "react-native";
 import { Screen } from "@/components/Screen";
-import { useFocusEffect } from "expo-router";
 import { FontAwesome6 } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { authFetch } from "@/lib/supabase";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
-interface CategoryInfo {
-  name: string;
-  icon: string;
-  color: string;
-}
-
 interface Transaction {
-  id: number;
-  amount: string;
+  id: string;
+  amount: number;
   type: "income" | "expense";
   category_id: number;
   note: string | null;
   date: string;
-  created_at: string;
-  categories: CategoryInfo;
+  categories?: { name: string; icon: string; color: string } | null;
 }
 
-interface Summary {
-  total_income: string;
-  total_expense: string;
-  balance: string;
+interface MonthData {
+  year: number;
+  month: number;
+  carryForward: number;
+  transactions: (Transaction & { runningBalance: number; serialNo: number })[];
+  totalIncome: number;
+  totalExpense: number;
+  endBalance: number;
 }
 
-// Icon name mapping
-const iconMap: Record<string, keyof typeof FontAwesome6.glyphMap> = {
+const iconMap: Record<string, string> = {
   restaurant: "utensils",
   car: "car",
-  "shopping-bag": "shopping-bag",
+  "shopping-bag": "bag-shopping",
   film: "film",
   heart: "heart",
   book: "book",
@@ -54,292 +50,647 @@ const iconMap: Record<string, keyof typeof FontAwesome6.glyphMap> = {
   "trending-up": "arrow-trend-up",
   clock: "clock",
   "plus-circle": "circle-plus",
+  circle: "circle",
 };
 
-function getIconName(name: string): keyof typeof FontAwesome6.glyphMap {
-  return (iconMap[name] || "circle") as keyof typeof FontAwesome6.glyphMap;
-}
-
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const month = d.getMonth() + 1;
-  const day = d.getDate();
-  const weekDays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  return `${month}月${day}日 ${weekDays[d.getDay()]}`;
-}
-
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [summary, setSummary] = useState<Summary>({ total_income: "0.00", total_expense: "0.00", balance: "0.00" });
+  const [monthData, setMonthData] = useState<MonthData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
+  const [error, setError] = useState<string | null>(null);
+  const nowRef = useRef(new Date());
+  const [viewYear, setViewYear] = useState(nowRef.current.getFullYear());
+  const [viewMonth, setViewMonth] = useState(nowRef.current.getMonth() + 1);
 
-  const fetchData = useCallback(async () => {
+  const fetchMonthData = useCallback(async (year: number, month: number) => {
+    setError(null);
     try {
-      const startDate = `${currentMonth}-01`;
-      const [year, month] = currentMonth.split("-").map(Number);
+      const pad = (n: number) => String(n).padStart(2, "0");
       const lastDay = new Date(year, month, 0).getDate();
-      const endDate = `${currentMonth}-${String(lastDay).padStart(2, "0")}`;
+      const monthStart = `${year}-${pad(month)}-01`;
+      const monthEnd = `${year}-${pad(month)}-${pad(lastDay)}`;
 
-      const [transRes, summaryRes] = await Promise.all([
-        authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?start_date=${startDate}&end_date=${endDate}&size=50`),
-        authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary?start_date=${startDate}&end_date=${endDate}`),
-      ]);
+      // 1. Fetch this month's transactions (date ASC for running balance)
+      const txRes = await authFetch(
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?start_date=${monthStart}&end_date=${monthEnd}&size=200&order=date.asc`
+      );
+      if (!txRes.ok) throw new Error("加载交易记录失败");
+      const txData = await txRes.json();
+      const transactions: Transaction[] = txData.data || [];
 
-      const transData = await transRes.json();
-      const summaryData = await summaryRes.json();
+      // 2. Calculate carry-forward balance (all before this month)
+      const prevMonthEnd = `${year}-${pad(month - 1 === 0 ? 12 : month - 1)}-${pad(
+        new Date(year, month - 1, 0).getDate()
+      )}`;
+      const summaryRes = await authFetch(
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary?end_date=${prevMonthEnd}`
+      );
+      let carryForward = 0;
+      if (summaryRes.ok) {
+        const summaryData = await summaryRes.json();
+        carryForward = parseFloat(summaryData.data?.balance || "0");
+      }
 
-      setTransactions(transData.data || []);
-      setSummary(summaryData.data || { total_income: "0.00", total_expense: "0.00", balance: "0.00" });
+      // 3. Calculate running balance
+      let running = carryForward;
+      let totalIncome = 0;
+      let totalExpense = 0;
+      const enriched = transactions.map((t, i) => {
+        const amt = parseFloat(String(t.amount));
+        if (t.type === "income") {
+          running += amt;
+          totalIncome += amt;
+        } else {
+          running -= amt;
+          totalExpense += amt;
+        }
+        return {
+          ...t,
+          amount: amt,
+          runningBalance: Math.round(running * 100) / 100,
+          serialNo: i + 1,
+        };
+      });
+
+      setMonthData({
+        year,
+        month,
+        carryForward,
+        transactions: enriched,
+        totalIncome,
+        totalExpense,
+        endBalance: Math.round(running * 100) / 100,
+      });
     } catch (err) {
-      console.error("Failed to fetch data:", err);
+      const message = err instanceof Error ? err.message : "加载失败";
+      setError(message);
     }
-  }, [currentMonth]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      fetchData();
-    }, [fetchData])
+      setLoading(true);
+      fetchMonthData(viewYear, viewMonth).finally(() => setLoading(false));
+    }, [viewYear, viewMonth, fetchMonthData])
   );
 
-  const onRefresh = useCallback(async () => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchData();
+    await fetchMonthData(viewYear, viewMonth);
     setRefreshing(false);
-  }, [fetchData]);
+  }, [viewYear, viewMonth, fetchMonthData]);
 
   const changeMonth = (delta: number) => {
-    const [year, month] = currentMonth.split("-").map(Number);
-    const d = new Date(year, month - 1 + delta, 1);
-    setCurrentMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    let newMonth = viewMonth + delta;
+    let newYear = viewYear;
+    if (newMonth > 12) {
+      newMonth = 1;
+      newYear++;
+    } else if (newMonth < 1) {
+      newMonth = 12;
+      newYear--;
+    }
+    setViewYear(newYear);
+    setViewMonth(newMonth);
   };
 
-  // Group transactions by date
-  const groupedTransactions = transactions.reduce<Record<string, Transaction[]>>((acc, t) => {
-    const dateKey = t.date.split("T")[0];
-    if (!acc[dateKey]) acc[dateKey] = [];
-    acc[dateKey].push(t);
-    return acc;
-  }, {});
+  const formatCurrency = (val: number) => {
+    const fixed = val.toFixed(2);
+    const [intPart, decPart] = fixed.split(".");
+    const formatted = Number(intPart).toLocaleString("en-US");
+    return { int: formatted, dec: decPart };
+  };
 
-  const sortedDates = Object.keys(groupedTransactions).sort((a, b) => b.localeCompare(a));
+  const monthLabels = [
+    "一月", "二月", "三月", "四月", "五月", "六月",
+    "七月", "八月", "九月", "十月", "十一月", "十二月",
+  ];
 
-  const renderTransaction = ({ item }: { item: Transaction }) => (
-    <View style={styles.transactionItem}>
-      <View style={[styles.iconContainer, { backgroundColor: `${item.categories.color}18` }]}>
-        <FontAwesome6 name={getIconName(item.categories.icon)} size={18} color={item.categories.color} />
+  const renderTableHeader = () => (
+    <View style={styles.tableHeader}>
+      <View style={[styles.colSerial, styles.colCenter]}>
+        <Text style={styles.headerText}>序号</Text>
       </View>
-      <View style={styles.transactionInfo}>
-        <Text style={styles.transactionName}>{item.categories.name}</Text>
-        {item.note ? <Text style={styles.transactionNote} numberOfLines={1}>{item.note}</Text> : null}
+      <View style={styles.colDate}>
+        <Text style={styles.headerText}>日期</Text>
       </View>
-      <Text style={[styles.transactionAmount, { color: item.type === "income" ? "#059669" : "#DC2626" }]}>
-        {item.type === "income" ? "+" : "-"}{parseFloat(item.amount).toFixed(2)}
-      </Text>
+      <View style={styles.colItem}>
+        <Text style={styles.headerText}>项目</Text>
+      </View>
+      <View style={[styles.colAmount, styles.colRight]}>
+        <Text style={[styles.headerText, styles.incomeHeader]}>收入</Text>
+      </View>
+      <View style={[styles.colAmount, styles.colRight]}>
+        <Text style={[styles.headerText, styles.expenseHeader]}>支出</Text>
+      </View>
+      <View style={[styles.colBalance, styles.colRight]}>
+        <Text style={styles.headerText}>余额</Text>
+      </View>
+    </View>
+  );
+
+  const renderCarryForward = () => {
+    if (!monthData) return null;
+    const cf = formatCurrency(monthData.carryForward);
+    return (
+      <View style={styles.carryForwardRow}>
+        <View style={[styles.colSerial, styles.colCenter]}>
+          <Text style={styles.cfText}>-</Text>
+        </View>
+        <View style={styles.colDate}>
+          <Text style={styles.cfText}>-</Text>
+        </View>
+        <View style={styles.colItem}>
+          <Text style={styles.cfLabel}>上月结余</Text>
+        </View>
+        <View style={[styles.colAmount, styles.colRight]}>
+          <Text style={styles.cfText}>-</Text>
+        </View>
+        <View style={[styles.colAmount, styles.colRight]}>
+          <Text style={styles.cfText}>-</Text>
+        </View>
+        <View style={[styles.colBalance, styles.colRight]}>
+          <Text style={styles.cfAmount}>
+            <Text style={styles.cfSymbol}>¥</Text>
+            {cf.int}
+            <Text style={styles.cfDecimal}>.{cf.dec}</Text>
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderTransaction = ({
+    item,
+  }: {
+    item: MonthData["transactions"][0];
+  }) => {
+    const amt = formatCurrency(Math.abs(item.amount));
+    const bal = formatCurrency(item.runningBalance);
+    const cat = item.categories;
+    const iconKey = cat?.icon || "circle";
+    const iconName = iconMap[iconKey] || "circle";
+    const dateStr = item.date ? item.date.slice(5) : ""; // MM-DD
+    const isIncome = item.type === "income";
+
+    return (
+      <View style={styles.txRow}>
+        {/* 序号 */}
+        <View style={[styles.colSerial, styles.colCenter]}>
+          <Text style={styles.serialText}>{item.serialNo}</Text>
+        </View>
+
+        {/* 日期 */}
+        <View style={styles.colDate}>
+          <Text style={styles.dateText}>{dateStr}</Text>
+        </View>
+
+        {/* 项目（分类图标+名称+备注） */}
+        <View style={styles.colItem}>
+          <View style={styles.itemRow}>
+            <View
+              style={[
+                styles.catIconWrap,
+                { backgroundColor: `${cat?.color || "#64748B"}18` },
+              ]}
+            >
+              <FontAwesome6
+                name={iconName as any}
+                size={11}
+                color={cat?.color || "#64748B"}
+              />
+            </View>
+            <View style={styles.itemTextWrap}>
+              <Text style={styles.itemTitle} numberOfLines={1}>
+                {cat?.name || "未分类"}
+              </Text>
+              {item.note ? (
+                <Text style={styles.itemNote} numberOfLines={1}>
+                  {item.note}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        </View>
+
+        {/* 收入 */}
+        <View style={[styles.colAmount, styles.colRight]}>
+          {isIncome ? (
+            <Text style={styles.incomeAmount}>
+              ¥{amt.int}
+              <Text style={styles.amountDecimal}>.{amt.dec}</Text>
+            </Text>
+          ) : (
+            <Text style={styles.emptyCell}>-</Text>
+          )}
+        </View>
+
+        {/* 支出 */}
+        <View style={[styles.colAmount, styles.colRight]}>
+          {!isIncome ? (
+            <Text style={styles.expenseAmount}>
+              ¥{amt.int}
+              <Text style={styles.amountDecimal}>.{amt.dec}</Text>
+            </Text>
+          ) : (
+            <Text style={styles.emptyCell}>-</Text>
+          )}
+        </View>
+
+        {/* 余额 */}
+        <View style={[styles.colBalance, styles.colRight]}>
+          <Text style={styles.balanceAmount}>
+            ¥{bal.int}
+            <Text style={styles.balanceDecimal}>.{bal.dec}</Text>
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderFooter = () => {
+    if (!monthData || monthData.transactions.length === 0) return null;
+    const totalIn = formatCurrency(monthData.totalIncome);
+    const totalOut = formatCurrency(monthData.totalExpense);
+    const endBal = formatCurrency(monthData.endBalance);
+    return (
+      <View style={styles.footerRow}>
+        <View style={[styles.colSerial, styles.colCenter]}>
+          <Text style={styles.footerLabel}>合计</Text>
+        </View>
+        <View style={styles.colDate} />
+        <View style={styles.colItem}>
+          <Text style={styles.footerLabel}>本月合计</Text>
+        </View>
+        <View style={[styles.colAmount, styles.colRight]}>
+          <Text style={styles.footerIncome}>
+            ¥{totalIn.int}
+            <Text style={styles.footerDecimal}>.{totalIn.dec}</Text>
+          </Text>
+        </View>
+        <View style={[styles.colAmount, styles.colRight]}>
+          <Text style={styles.footerExpense}>
+            ¥{totalOut.int}
+            <Text style={styles.footerDecimal}>.{totalOut.dec}</Text>
+          </Text>
+        </View>
+        <View style={[styles.colBalance, styles.colRight]}>
+          <Text style={styles.footerBalance}>
+            ¥{endBal.int}
+            <Text style={styles.footerDecimal}>.{endBal.dec}</Text>
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderEmpty = () => (
+    <View style={styles.emptyContainer}>
+      <FontAwesome6 name="book-open" size={40} color="#CBD5E1" />
+      <Text style={styles.emptyText}>本月暂无记录</Text>
+      <Text style={styles.emptyHint}>{'点击底部"+"开始记账'}</Text>
     </View>
   );
 
   return (
     <Screen safeAreaEdges={["left", "right"]}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <View style={styles.monthSelector}>
-          <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.arrowBtn}>
-            <FontAwesome6 name="chevron-left" size={16} color="#0F172A" />
+      <View style={styles.container}>
+        {/* Month Selector */}
+        <View style={styles.monthBar}>
+          <TouchableOpacity
+            style={styles.monthArrow}
+            onPress={() => changeMonth(-1)}
+          >
+            <FontAwesome6 name="chevron-left" size={16} color="#475569" />
           </TouchableOpacity>
-          <Text style={styles.monthText}>{currentMonth.replace("-", "年")}月</Text>
-          <TouchableOpacity onPress={() => changeMonth(1)} style={styles.arrowBtn}>
-            <FontAwesome6 name="chevron-right" size={16} color="#0F172A" />
+          <Text style={styles.monthTitle}>
+            {viewYear}年{monthLabels[viewMonth - 1]}
+          </Text>
+          <TouchableOpacity
+            style={styles.monthArrow}
+            onPress={() => changeMonth(1)}
+          >
+            <FontAwesome6 name="chevron-right" size={16} color="#475569" />
           </TouchableOpacity>
         </View>
 
-        {/* Summary Card */}
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>收入</Text>
-            <Text style={[styles.summaryValue, { color: "#059669" }]}>
-              {parseFloat(summary.total_income).toFixed(2)}
-            </Text>
+        {/* Error State */}
+        {error && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity
+              onPress={() => fetchMonthData(viewYear, viewMonth)}
+            >
+              <Text style={styles.retryText}>重试</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.summaryDivider} />
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>支出</Text>
-            <Text style={[styles.summaryValue, { color: "#DC2626" }]}>
-              {parseFloat(summary.total_expense).toFixed(2)}
-            </Text>
-          </View>
-          <View style={styles.summaryDivider} />
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>结余</Text>
-            <Text style={[styles.summaryValue, { color: "#2563EB" }]}>
-              {parseFloat(summary.balance).toFixed(2)}
-            </Text>
-          </View>
-        </View>
-      </View>
+        )}
 
-      {/* Transaction List */}
-      <FlatList
-        data={sortedDates}
-        keyExtractor={(item) => item}
-        contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 80 }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <FontAwesome6 name="receipt" size={48} color="#CBD5E1" />
-            <Text style={styles.emptyText}>本月暂无记录</Text>
+        {/* Loading */}
+        {loading && !monthData ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#2563EB" />
           </View>
-        }
-        renderItem={({ item: dateKey }) => {
-          const items = groupedTransactions[dateKey];
-          const dayExpense = items.filter((t) => t.type === "expense").reduce((s, t) => s + parseFloat(t.amount), 0);
-          const dayIncome = items.filter((t) => t.type === "income").reduce((s, t) => s + parseFloat(t.amount), 0);
-
-          return (
-            <View style={styles.dateGroup}>
-              <View style={styles.dateHeader}>
-                <Text style={styles.dateText}>{formatDate(dateKey)}</Text>
-                <View style={styles.dateSummary}>
-                  {dayIncome > 0 && <Text style={styles.dateIncome}>收:{dayIncome.toFixed(2)}</Text>}
-                  {dayExpense > 0 && <Text style={styles.dateExpense}>支:{dayExpense.toFixed(2)}</Text>}
-                </View>
+        ) : monthData ? (
+          <FlatList
+            data={monthData.transactions}
+            keyExtractor={(item) => item.id}
+            renderItem={renderTransaction}
+            ListHeaderComponent={
+              <View>
+                {renderTableHeader()}
+                {renderCarryForward()}
               </View>
-              {items.map((t) => (
-                <View key={t.id}>{renderTransaction({ item: t })}</View>
-              ))}
-            </View>
-          );
-        }}
-      />
+            }
+            ListFooterComponent={renderFooter}
+            ListEmptyComponent={renderEmpty}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor="#2563EB"
+              />
+            }
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        ) : null}
+      </View>
     </Screen>
   );
 }
 
+const COLORS = {
+  bg: "#FDFCF9",
+  tableBg: "#FFFFFF",
+  border: "#E8E4DB",
+  headerBg: "#F7F5F0",
+  headerText: "#5C4F3C",
+  text: "#2D2420",
+  textSecondary: "#8B7E6E",
+  income: "#0F7B4E",
+  incomeBg: "#ECFDF5",
+  expense: "#C2410C",
+  expenseBg: "#FFF7ED",
+  balance: "#1E3A5F",
+  carryForwardBg: "#F9F7F2",
+  footerBg: "#F7F5F0",
+};
+
 const styles = StyleSheet.create({
-  header: {
-    backgroundColor: "#F8FAFC",
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
   },
-  monthSelector: {
+
+  // Month Bar
+  monthBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    backgroundColor: COLORS.bg,
   },
-  arrowBtn: {
-    padding: 8,
+  monthArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.tableBg,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  monthText: {
+  monthTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0F172A",
-    marginHorizontal: 16,
+    color: COLORS.text,
+    marginHorizontal: 24,
+    letterSpacing: 0.5,
   },
-  summaryCard: {
+
+  // Error
+  errorBanner: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 8,
   },
-  summaryItem: {
+  errorText: { fontSize: 13, color: "#DC2626" },
+  retryText: { fontSize: 13, color: "#2563EB", fontWeight: "600" },
+
+  // Loading
+  loadingContainer: {
     flex: 1,
+    justifyContent: "center",
     alignItems: "center",
   },
-  summaryDivider: {
-    width: 1,
-    backgroundColor: "#E2E8F0",
-    marginVertical: 4,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: "#64748B",
-    marginBottom: 6,
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: "800",
-  },
+
+  // List
   listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingBottom: 40,
   },
+
+  // Table Header
+  tableHeader: {
+    flexDirection: "row",
+    backgroundColor: COLORS.headerBg,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.border,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    marginHorizontal: 0,
+  },
+  headerText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: COLORS.headerText,
+    letterSpacing: 0.5,
+  },
+  incomeHeader: { color: COLORS.income },
+  expenseHeader: { color: COLORS.expense },
+
+  // Carry Forward
+  carryForwardRow: {
+    flexDirection: "row",
+    backgroundColor: COLORS.carryForwardBg,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  cfLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.textSecondary,
+  },
+  cfText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+  },
+  cfAmount: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: COLORS.balance,
+  },
+  cfSymbol: {
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  cfDecimal: {
+    fontSize: 10,
+    fontWeight: "500",
+  },
+
+  // Transaction Row
+  txRow: {
+    flexDirection: "row",
+    backgroundColor: COLORS.tableBg,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.border,
+    minHeight: 44,
+    alignItems: "center",
+  },
+
+  // Column widths
+  colSerial: { width: 32 },
+  colDate: { width: 46 },
+  colItem: { flex: 1, paddingHorizontal: 4 },
+  colAmount: { width: 64 },
+  colBalance: { width: 72 },
+  colCenter: { alignItems: "center" },
+  colRight: { alignItems: "flex-end" },
+
+  serialText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.textSecondary,
+  },
+  dateText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: COLORS.text,
+  },
+
+  // Item
+  itemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  catIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  itemTextWrap: {
+    flex: 1,
+  },
+  itemTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  itemNote: {
+    fontSize: 10,
+    color: COLORS.textSecondary,
+    marginTop: 1,
+  },
+
+  // Amount cells
+  emptyCell: {
+    fontSize: 12,
+    color: "#D6D3D1",
+  },
+  incomeAmount: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.income,
+  },
+  expenseAmount: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.expense,
+  },
+  amountDecimal: {
+    fontSize: 10,
+    fontWeight: "500",
+  },
+
+  // Balance
+  balanceAmount: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.balance,
+  },
+  balanceDecimal: {
+    fontSize: 10,
+    fontWeight: "500",
+  },
+
+  // Footer (合计)
+  footerRow: {
+    flexDirection: "row",
+    backgroundColor: COLORS.footerBg,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderTopWidth: 2,
+    borderTopColor: COLORS.border,
+    borderBottomWidth: 2,
+    borderBottomColor: COLORS.border,
+    alignItems: "center",
+  },
+  footerLabel: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: COLORS.headerText,
+  },
+  footerIncome: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: COLORS.income,
+  },
+  footerExpense: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: COLORS.expense,
+  },
+  footerBalance: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: COLORS.balance,
+  },
+  footerDecimal: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+
+  // Empty
   emptyContainer: {
     alignItems: "center",
-    paddingTop: 80,
+    justifyContent: "center",
+    paddingVertical: 60,
   },
   emptyText: {
     fontSize: 15,
-    color: "#94A3B8",
-    marginTop: 16,
-  },
-  dateGroup: {
-    marginBottom: 16,
-  },
-  dateHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  dateText: {
-    fontSize: 14,
     fontWeight: "600",
-    color: "#0F172A",
+    color: COLORS.textSecondary,
+    marginTop: 12,
   },
-  dateSummary: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  dateIncome: {
-    fontSize: 12,
-    color: "#059669",
-  },
-  dateExpense: {
-    fontSize: 12,
-    color: "#DC2626",
-  },
-  transactionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 6,
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  transactionInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  transactionName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#0F172A",
-  },
-  transactionNote: {
-    fontSize: 12,
-    color: "#64748B",
-    marginTop: 2,
-  },
-  transactionAmount: {
-    fontSize: 16,
-    fontWeight: "700",
+  emptyHint: {
+    fontSize: 13,
+    color: "#B8B0A5",
+    marginTop: 4,
   },
 });
