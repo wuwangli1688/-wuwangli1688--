@@ -78,6 +78,7 @@ export const transactions = pgTable(
     type: varchar("type", { length: 20 }).notNull(),
     categoryId: uuid("category_id").notNull(),
     note: text("note"),
+    project: text("project"),
     date: timestamp("date", { mode: "string" }).notNull(),
     userId: uuid("user_id").notNull(),
     storeId: uuid("store_id"), // which store this transaction belongs to

@@ -36,7 +36,7 @@ export default function CategoriesScreen() {
 
   // Form state
   const [formName, setFormName] = useState("");
-  const [formIcon, setFormIcon] = useState("📦");
+  const [formIcon, setFormIcon] = useState("more-horizontal");
   const [formType, setFormType] = useState<"income" | "expense">("expense");
   const [formColor, setFormColor] = useState("#6B7280");
 
@@ -163,7 +163,7 @@ export default function CategoriesScreen() {
           <Text className="text-lg font-bold text-gray-900 dark:text-white flex-1">分类管理</Text>
           <TouchableOpacity
             className="bg-blue-600 px-4 py-2 rounded-lg"
-            onPress={() => { setFormName(''); setFormIcon('📦'); setFormType('expense'); setFormColor('#6B7280'); setEditing(null); setModalVisible(true); }}
+            onPress={() => { setFormName(''); setFormIcon('more-horizontal'); setFormType('expense'); setFormColor('#6B7280'); setEditing(null); setModalVisible(true); }}
           >
             <Text className="text-white font-medium text-sm">新增</Text>
           </TouchableOpacity>

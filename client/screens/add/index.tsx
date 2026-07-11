@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { Screen } from "@/components/Screen";
 import { FontAwesome6 } from "@expo/vector-icons";
+import { Link } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
 import { authFetch } from "@/lib/supabase";
@@ -62,6 +63,7 @@ export default function AddScreen() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [project, setProject] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [saving, setSaving] = useState(false);
 
@@ -121,6 +123,7 @@ export default function AddScreen() {
           category_id: selectedCategory,
           store_id: selectedStoreId,
           note: note || null,
+          project: project || null,
           date: new Date(date).toISOString(),
         }),
       });
@@ -132,6 +135,7 @@ export default function AddScreen() {
 
       setAmount("");
       setNote("");
+      setProject("");
       setSelectedCategory(null);
       Alert.alert("成功", "记录已保存", [
         { text: "继续记账", style: "default" },
@@ -229,6 +233,9 @@ export default function AddScreen() {
           {/* Category Grid */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>选择分类</Text>
+            <Link href="/categories" style={styles.manageLink}>
+              <Text style={styles.manageLinkText}>管理分类</Text>
+            </Link>
           </View>
           <View style={styles.categoryGrid}>
             {categories.map((cat) => (
@@ -260,6 +267,22 @@ export default function AddScreen() {
               value={note}
               onChangeText={setNote}
               maxLength={100}
+            />
+          </View>
+
+          {/* Project Content */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>项目内容</Text>
+          </View>
+          <View style={styles.noteInputContainer}>
+            <TextInput
+              style={styles.noteInput}
+              placeholder="填写项目内容，如：购买办公用品、支付房租（可选）"
+              placeholderTextColor="#94A3B8"
+              value={project}
+              onChangeText={setProject}
+              maxLength={200}
+              multiline
             />
           </View>
 
@@ -357,12 +380,24 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: "#0F172A",
+  },
+  manageLink: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  manageLinkText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#2563EB",
   },
   categoryGrid: {
     flexDirection: "row",

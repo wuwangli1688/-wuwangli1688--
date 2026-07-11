@@ -371,7 +371,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
 // For parent accounts, status is 'approved' directly
 router.post("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { amount, type, category_id, note, date, store_id } = req.body;
+    const { amount, type, category_id, note, date, store_id, project } = req.body;
     const userId = req.userId!;
     const role = req.userRole!;
 
@@ -390,6 +390,7 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
       type,
       category_id,
       note: note || null,
+      project: project || null,
       date,
       user_id: userId,
       status,
@@ -416,7 +417,7 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
 router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { amount, type, category_id, note, date } = req.body;
+    const { amount, type, category_id, note, date, project } = req.body;
     const userId = req.userId!;
 
     const updateData: Record<string, unknown> = {};
@@ -424,6 +425,7 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
     if (type !== undefined) updateData.type = type;
     if (category_id !== undefined) updateData.category_id = category_id;
     if (note !== undefined) updateData.note = note || null;
+    if (project !== undefined) updateData.project = project || null;
     if (date !== undefined) updateData.date = date;
 
     const client = getSupabaseClient();

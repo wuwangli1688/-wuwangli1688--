@@ -21,6 +21,7 @@ interface Transaction {
   type: "income" | "expense";
   category_id: number;
   note: string | null;
+  project: string | null;
   date: string;
   categories?: { name: string; icon: string; color: string } | null;
 }
@@ -245,7 +246,7 @@ export default function HomeScreen() {
           <Text style={styles.dateText}>{dateStr}</Text>
         </View>
 
-        {/* 项目（分类图标+名称+备注） */}
+        {/* 项目（分类图标+名称+项目内容+备注） */}
         <View style={styles.colItem}>
           <View style={styles.itemRow}>
             <View
@@ -262,13 +263,24 @@ export default function HomeScreen() {
             </View>
             <View style={styles.itemTextWrap}>
               <Text style={styles.itemTitle} numberOfLines={1}>
-                {cat?.name || "未分类"}
+                {item.project || cat?.name || "未分类"}
               </Text>
-              {item.note ? (
+              {item.project ? (
                 <Text style={styles.itemNote} numberOfLines={1}>
-                  {item.note}
+                  {cat?.name || "未分类"}{item.note ? ` · ${item.note}` : ""}
                 </Text>
-              ) : null}
+              ) : (
+                <>
+                  <Text style={styles.itemNote} numberOfLines={1}>
+                    {cat?.name || "未分类"}
+                  </Text>
+                  {item.note ? (
+                    <Text style={styles.itemNote} numberOfLines={1}>
+                      {item.note}
+                    </Text>
+                  ) : null}
+                </>
+              )}
             </View>
           </View>
         </View>
