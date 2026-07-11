@@ -5,12 +5,9 @@ import { authMiddleware, type AuthenticatedRequest } from "../middleware/auth.js
 
 const router = Router();
 
-// All share routes require auth
-router.use(authMiddleware);
-
-// GET /api/v1/share/app-url
+// GET /api/v1/share/app-url (public)
 // Returns the app download/share URL and QR code as base64
-router.get("/app-url", async (req: AuthenticatedRequest, res: Response) => {
+router.get("/app-url", async (_req, res: Response) => {
   try {
     const baseUrl = process.env.EXPO_PUBLIC_BACKEND_BASE_URL || "http://localhost:5000";
     // The web app URL - users can directly access the app in browser

@@ -221,7 +221,12 @@ export default function AccountManageScreen() {
                 <FontAwesome6 name="user" size={20} color="#2563EB" />
               </View>
               <View style={s.accountInfo}>
-                <Text style={s.accountName}>{item.displayName}</Text>
+                <View style={s.accountNameRow}>
+                  <Text style={s.accountName}>{item.displayName}</Text>
+                  <View style={[s.roleBadge, item.role === 'parent' ? s.roleParent : s.roleChild]}>
+                    <Text style={s.roleBadgeText}>{item.role === 'parent' ? '主账号' : '子账号'}</Text>
+                  </View>
+                </View>
                 <Text style={s.accountEmail}>{item.email}</Text>
               </View>
               <View style={s.accountActions}>
@@ -369,7 +374,12 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   accountInfo: { flex: 1, marginLeft: 12 },
+  accountNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   accountName: { fontSize: 16, fontWeight: '600', color: '#1E293B' },
+  roleBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  roleParent: { backgroundColor: '#DBEAFE' },
+  roleChild: { backgroundColor: '#FEF3C7' },
+  roleBadgeText: { fontSize: 11, fontWeight: '600' },
   accountEmail: { fontSize: 13, color: '#64748B', marginTop: 2 },
   accountActions: { flexDirection: 'row', gap: 8 },
   actionBtn: { padding: 8 },

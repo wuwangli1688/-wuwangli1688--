@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Screen } from "@/components/Screen";
 import { FontAwesome6 } from "@expo/vector-icons";
-import { authFetch } from "@/lib/supabase";
+
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -43,7 +43,7 @@ export default function ShareScreen() {
        * 接口：GET /api/v1/share/install-info
        * 无参数
        */
-      const res = await authFetch(
+      const res = await fetch(
         `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/share/install-info`
       );
       const data = await res.json();

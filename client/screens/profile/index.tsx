@@ -339,6 +339,17 @@ export default function ProfileScreen() {
               <Text style={styles.actionText}>店铺管理</Text>
               <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={() => router.push("/categories")}
+            >
+              <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
+                <FontAwesome6 name="tags" size={16} color="#D97706" />
+              </View>
+              <Text style={styles.actionText}>项目分类</Text>
+              <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+            </TouchableOpacity>
           </View>
         )}
 

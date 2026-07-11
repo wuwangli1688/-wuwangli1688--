@@ -3,8 +3,12 @@ import type { Request, Response } from "express";
 import { getSupabaseClient } from "../storage/database/supabase-client.js";
 import { authMiddleware } from "../middleware/auth.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
+import shareRouter from "./share.js";
 
 const router = Router();
+
+// Public routes (no auth required)
+router.use("/share", shareRouter);
 
 // All business routes require authentication
 router.use(authMiddleware);
@@ -53,6 +57,80 @@ router.get("/categories/by-type", async (req: AuthenticatedRequest, res: Respons
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: message });
   }
+});
+
+// POST /api/v1/categories - Create custom category
+router.post("/categories", async (req: AuthenticatedRequest, res: Response) => {
+	try {
+		const client = getSupabaseClient();
+		const userId = req.userId!;
+		const { name, icon, type, color } = req.body;
+		if (!name || !type) return res.status(400).json({ error: "name and type are required" });
+		if (!["income", "expense"].includes(type)) return res.status(400).json({ error: "type must be 'income' or 'expense'" });
+
+		const { data, error } = await client
+			.from("categories")
+			.insert({ name, icon: icon || "📦", type, color: color || "#6B7280", user_id: userId })
+			.select("id, name, icon, type, color, sort_order, user_id")
+			.single();
+		if (error) throw new Error(`创建失败: ${error.message}`);
+		res.json({ data });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Unknown error";
+		res.status(500).json({ error: message });
+	}
+});
+
+// PUT /api/v1/categories/:id - Update custom category
+router.put("/categories/:id", async (req: AuthenticatedRequest, res: Response) => {
+	try {
+		const client = getSupabaseClient();
+		const userId = req.userId!;
+		const { id } = req.params;
+		const { name, icon, color } = req.body;
+
+		const { data: existing } = await client.from("categories").select("user_id").eq("id", id).single();
+		if (!existing) return res.status(404).json({ error: "分类不存在" });
+		if (existing.user_id !== userId) return res.status(403).json({ error: "不能修改系统默认分类" });
+
+		const updates: any = {};
+		if (name) updates.name = name;
+		if (icon) updates.icon = icon;
+		if (color) updates.color = color;
+
+		const { data, error } = await client
+			.from("categories")
+			.update(updates)
+			.eq("id", id)
+			.eq("user_id", userId)
+			.select("id, name, icon, type, color, sort_order, user_id")
+			.single();
+		if (error) throw new Error(`更新失败: ${error.message}`);
+		res.json({ data });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Unknown error";
+		res.status(500).json({ error: message });
+	}
+});
+
+// DELETE /api/v1/categories/:id - Delete custom category
+router.delete("/categories/:id", async (req: AuthenticatedRequest, res: Response) => {
+	try {
+		const client = getSupabaseClient();
+		const userId = req.userId!;
+		const { id } = req.params;
+
+		const { data: existing } = await client.from("categories").select("user_id").eq("id", id).single();
+		if (!existing) return res.status(404).json({ error: "分类不存在" });
+		if (existing.user_id !== userId) return res.status(403).json({ error: "不能删除系统默认分类" });
+
+		const { error } = await client.from("categories").delete().eq("id", id).eq("user_id", userId);
+		if (error) throw new Error(`删除失败: ${error.message}`);
+		res.json({ message: "删除成功" });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Unknown error";
+		res.status(500).json({ error: message });
+	}
 });
 
 // ==================== Transactions ====================
@@ -389,11 +467,6 @@ import exportRouter from "./export.js";
 
 // ==================== Export ====================
 router.use("/export", exportRouter);
-
-import shareRouter from "./share.js";
-
-// ==================== Share / QR Code ====================
-router.use("/share", shareRouter);
 
 import accountsRouter from "./accounts.js";
 
