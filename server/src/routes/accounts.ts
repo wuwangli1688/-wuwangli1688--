@@ -205,20 +205,29 @@ router.get('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res
       return res.status(500).json({ error: error.message });
     }
 
-    // Get user details from auth
+    // Get user details from auth and permissions
     const subAccounts = [];
     for (const profile of (profiles || [])) {
       const { data: userData } = await (serviceClient.auth.admin as any).getUserById(profile.id);
+
+      // Get store permissions for this sub-account
+      const { data: storePerms } = await serviceClient
+        .from('store_permissions')
+        .select('store_id')
+        .eq('user_id', profile.id);
+      const permissionStoreIds = (storePerms || []).map((p: any) => p.store_id);
+
       subAccounts.push({
         id: profile.id,
         email: userData?.user?.email || '',
-        displayName: profile.displayName || '子账号',
+        display_name: profile.display_name || profile.displayName || '子账号',
         role: profile.role,
-        createdAt: profile.createdAt,
+        created_at: profile.created_at || profile.createdAt,
+        permissions: permissionStoreIds,
       });
     }
 
-    return res.json(subAccounts);
+    return res.json({ data: subAccounts });
   } catch (error) {
     console.error('List sub-accounts error:', error);
     return res.status(500).json({ error: '获取子账号列表失败' });

@@ -95,6 +95,51 @@ router.post('/', requireParent, async (req: AuthenticatedRequest, res: Response)
   }
 });
 
+// POST /api/v1/stores/permissions - Batch set permissions for a sub-account (parent only)
+router.post('/permissions', requireParent, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { user_id, store_ids } = req.body;
+    if (!user_id || !Array.isArray(store_ids)) {
+      return res.status(400).json({ error: '请提供子账号ID和店铺ID列表' });
+    }
+
+    const client = getSupabaseClient();
+    const ownerId = req.userId!;
+
+    // Verify target user is a sub-account of this parent
+    const { data: profile } = await client
+      .from('user_profiles')
+      .select('id')
+      .eq('id', user_id)
+      .eq('parent_user_id', ownerId)
+      .eq('role', 'child')
+      .single();
+
+    if (!profile) {
+      return res.status(400).json({ error: '目标用户不是您的子账号' });
+    }
+
+    // Remove all existing permissions for this user
+    await client.from('store_permissions').delete().eq('user_id', user_id);
+
+    // Insert new permissions for selected stores
+    if (store_ids.length > 0) {
+      const inserts = store_ids.map((storeId: string) => ({
+        store_id: storeId,
+        user_id: user_id,
+        granted_by: ownerId,
+      }));
+      const { error } = await client.from('store_permissions').insert(inserts);
+      if (error) throw error;
+    }
+
+    return res.json({ message: '权限已更新' });
+  } catch (error) {
+    console.error('Batch set permissions error:', error);
+    return res.status(500).json({ error: '更新权限失败' });
+  }
+});
+
 // PUT /api/v1/stores/:id - Update store name (parent only, must be owner)
 router.put('/:id', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -272,7 +317,7 @@ router.post('/:id/permissions', requireParent, async (req: AuthenticatedRequest,
     // Grant permission
     const { data, error } = await client
       .from('store_permissions')
-      .insert({ storeId: id, userId, grantedBy: ownerId })
+      .insert({ store_id: id, user_id: userId, granted_by: ownerId })
       .select()
       .single();
 

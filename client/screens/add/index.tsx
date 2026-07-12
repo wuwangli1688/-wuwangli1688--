@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { Screen } from "@/components/Screen";
 import { FontAwesome6 } from "@expo/vector-icons";
-import { Link } from "expo-router";
+import { Link, router as expoRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
 import { authFetch } from "@/lib/supabase";
@@ -246,6 +246,7 @@ export default function AddScreen() {
                   selectedCategory === cat.id && { backgroundColor: `${cat.color}20`, borderColor: cat.color },
                 ]}
                 onPress={() => setSelectedCategory(cat.id)}
+                onLongPress={() => router.push('/categories')}
               >
                 <View style={[styles.categoryIcon, { backgroundColor: `${cat.color}15` }]}>
                   <FontAwesome6 name={getIconName(cat.icon)} size={20} color={cat.color} />

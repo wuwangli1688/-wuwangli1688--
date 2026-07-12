@@ -8,22 +8,20 @@ import {
   TextInput,
   Alert,
   ScrollView,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Screen } from "@/components/Screen";
 import { authFetch } from "@/lib/supabase";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
 
-const PRESET_ICONS = ["food", "car", "cash", "cart", "home", "game", "book", "med", "plane", "shirt", "music", "pet", "coffee", "gift", "hospital", "phone"];
-const PRESET_COLORS = ["#EF4444", "#F97316", "#EAB308", "#22C55E", "#06B6D4", "#3B82F6", "#8B5CF6", "#EC4899", "#6B7280"];
+const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
 interface Category {
   id: number;
   name: string;
-  icon: string;
   type: "income" | "expense";
-  color: string;
-  sort_order: number;
   user_id: string | null;
 }
 
@@ -36,13 +34,11 @@ export default function CategoriesScreen() {
 
   // Form state
   const [formName, setFormName] = useState("");
-  const [formIcon, setFormIcon] = useState("more-horizontal");
   const [formType, setFormType] = useState<"income" | "expense">("expense");
-  const [formColor, setFormColor] = useState("#6B7280");
 
   const fetchCategories = useCallback(async () => {
     try {
-      const res = await authFetch("/api/v1/categories");
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/categories`);
       const json = await res.json();
       setCategories(json.data || []);
     } catch (err) {
@@ -61,9 +57,7 @@ export default function CategoriesScreen() {
   const openEdit = (cat: Category) => {
     setEditing(cat);
     setFormName(cat.name);
-    setFormIcon(cat.icon);
     setFormType(cat.type);
-    setFormColor(cat.color);
     setModalVisible(true);
   };
 
@@ -74,17 +68,33 @@ export default function CategoriesScreen() {
     }
     try {
       if (editing) {
-        const res = await authFetch(`/api/v1/categories/${editing.id}`, {
+        /**
+         * 服务端文件：server/src/routes/index.ts
+         * 接口：PUT /api/v1/categories/:id
+         * Body 参数：name: string, icon?: string, color?: string
+         */
+        const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/categories/${editing.id}`, {
           method: "PUT",
-          body: JSON.stringify({ name: formName.trim(), icon: formIcon, color: formColor }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: formName.trim() }),
         });
-        if (!res.ok) throw new Error("更新失败");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "更新失败");
+        Alert.alert("成功", "分类已更新");
       } else {
-        const res = await authFetch("/api/v1/categories", {
+        /**
+         * 服务端文件：server/src/routes/index.ts
+         * 接口：POST /api/v1/categories
+         * Body 参数：name: string, type: string, icon?: string, color?: string
+         */
+        const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/categories`, {
           method: "POST",
-          body: JSON.stringify({ name: formName.trim(), icon: formIcon, type: formType, color: formColor }),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: formName.trim(), type: formType }),
         });
-        if (!res.ok) throw new Error("创建失败");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "创建失败");
+        Alert.alert("成功", "分类已添加");
       }
       setModalVisible(false);
       fetchCategories();
@@ -105,8 +115,13 @@ export default function CategoriesScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            const res = await authFetch(`/api/v1/categories/${cat.id}`, { method: "DELETE" });
-            if (!res.ok) throw new Error("删除失败");
+            const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/categories/${cat.id}`, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "删除失败");
+            Alert.alert("成功", "分类已删除");
             fetchCategories();
           } catch (err) {
             Alert.alert("错误", err instanceof Error ? err.message : "删除失败");
@@ -120,12 +135,11 @@ export default function CategoriesScreen() {
   const expenseCats = categories.filter((c) => c.type === "expense");
 
   const renderCategory = ({ item }: { item: Category }) => (
-    <View className="flex-row items-center bg-white dark:bg-gray-800 mx-4 mb-2 p-4 rounded-xl">
-      <View
-        className="w-10 h-10 rounded-xl items-center justify-center mr-3"
-        style={{ backgroundColor: item.color + "20" }}
-      >
-        <Text className="text-lg">{item.icon}</Text>
+    <View className="flex-row items-center bg-white dark:bg-gray-800 mx-4 mb-2 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+      <View className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 items-center justify-center mr-3">
+        <Text className="text-lg text-blue-600 dark:text-blue-400 font-bold">
+          {item.type === "expense" ? "支" : "收"}
+        </Text>
       </View>
       <View className="flex-1">
         <Text className="text-base font-semibold text-gray-900 dark:text-white">{item.name}</Text>
@@ -163,7 +177,7 @@ export default function CategoriesScreen() {
           <Text className="text-lg font-bold text-gray-900 dark:text-white flex-1">分类管理</Text>
           <TouchableOpacity
             className="bg-blue-600 px-4 py-2 rounded-lg"
-            onPress={() => { setFormName(''); setFormIcon('more-horizontal'); setFormType('expense'); setFormColor('#6B7280'); setEditing(null); setModalVisible(true); }}
+            onPress={() => { setFormName(''); setFormType('expense'); setEditing(null); setModalVisible(true); }}
           >
             <Text className="text-white font-medium text-sm">新增</Text>
           </TouchableOpacity>
@@ -203,101 +217,75 @@ export default function CategoriesScreen() {
 
         {/* Add/Edit Modal */}
         <Modal visible={modalVisible} transparent animationType="slide">
-          <View className="flex-1 justify-end bg-black/40">
-            <View className="bg-white dark:bg-gray-800 rounded-t-3xl p-6 max-h-[70%]">
-              <ScrollView>
-                <Text className="text-xl font-bold text-gray-900 dark:text-white mb-6">
-                  {editing ? "编辑分类" : "添加分类"}
-                </Text>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <View className="flex-1 justify-end bg-black/40">
+              <View className="bg-white dark:bg-gray-800 rounded-t-3xl p-6">
+                <ScrollView>
+                  <Text className="text-xl font-bold text-gray-900 dark:text-white mb-6">
+                    {editing ? "编辑分类" : "添加分类"}
+                  </Text>
 
-                {/* Name */}
-                <Text className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">分类名称</Text>
-                <TextInput
-                  className="bg-gray-100 dark:bg-gray-700 rounded-xl px-4 py-3 text-gray-900 dark:text-white mb-4"
-                  placeholder="输入分类名称"
-                  placeholderTextColor="#9CA3AF"
-                  value={formName}
-                  onChangeText={setFormName}
-                />
+                  {/* Name */}
+                  <Text className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">分类名称</Text>
+                  <TextInput
+                    className="bg-gray-100 dark:bg-gray-700 rounded-xl px-4 py-3 text-gray-900 dark:text-white mb-4"
+                    placeholder="输入分类名称"
+                    placeholderTextColor="#9CA3AF"
+                    value={formName}
+                    onChangeText={setFormName}
+                  />
 
-                {/* Type (only for new) */}
-                {!editing && (
-                  <>
-                    <Text className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">类型</Text>
-                    <View className="flex-row gap-3 mb-4">
-                      <TouchableOpacity
-                        className={`flex-1 py-3 rounded-xl items-center ${
-                          formType === "expense" ? "bg-red-500" : "bg-gray-200 dark:bg-gray-700"
-                        }`}
-                        onPress={() => setFormType("expense")}
-                      >
-                        <Text className={formType === "expense" ? "text-white font-semibold" : "text-gray-500"}>
-                          支出
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        className={`flex-1 py-3 rounded-xl items-center ${
-                          formType === "income" ? "bg-green-500" : "bg-gray-200 dark:bg-gray-700"
-                        }`}
-                        onPress={() => setFormType("income")}
-                      >
-                        <Text className={formType === "income" ? "text-white font-semibold" : "text-gray-500"}>
-                          收入
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                )}
+                  {/* Type (only for new) */}
+                  {!editing && (
+                    <>
+                      <Text className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">类型</Text>
+                      <View className="flex-row gap-3 mb-4">
+                        <TouchableOpacity
+                          className={`flex-1 py-3 rounded-xl items-center ${
+                            formType === "expense" ? "bg-red-500" : "bg-gray-200 dark:bg-gray-700"
+                          }`}
+                          onPress={() => setFormType("expense")}
+                        >
+                          <Text className={formType === "expense" ? "text-white font-semibold" : "text-gray-500"}>
+                            支出
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          className={`flex-1 py-3 rounded-xl items-center ${
+                            formType === "income" ? "bg-green-500" : "bg-gray-200 dark:bg-gray-700"
+                          }`}
+                          onPress={() => setFormType("income")}
+                        >
+                          <Text className={formType === "income" ? "text-white font-semibold" : "text-gray-500"}>
+                            收入
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+                </ScrollView>
 
-                {/* Icon */}
-                <Text className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">图标</Text>
-                <View className="flex-row flex-wrap gap-2 mb-4">
-                  {PRESET_ICONS.map((icon) => (
-                    <TouchableOpacity
-                      key={icon}
-                      className={`w-11 h-11 rounded-xl items-center justify-center ${
-                        formIcon === icon ? "bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-500" : "bg-gray-100 dark:bg-gray-700"
-                      }`}
-                      onPress={() => setFormIcon(icon)}
-                    >
-                      <Text className="text-xl">{icon}</Text>
-                    </TouchableOpacity>
-                  ))}
+                {/* Footer */}
+                <View className="flex-row gap-3 mt-4">
+                  <TouchableOpacity
+                    className="flex-1 py-3 rounded-xl bg-gray-200 dark:bg-gray-700 items-center"
+                    onPress={() => setModalVisible(false)}
+                  >
+                    <Text className="text-gray-700 dark:text-gray-300 font-semibold">取消</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="flex-1 py-3 rounded-xl bg-blue-600 items-center"
+                    onPress={handleSave}
+                  >
+                    <Text className="text-white font-semibold">保存</Text>
+                  </TouchableOpacity>
                 </View>
-
-                {/* Color */}
-                <Text className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">颜色</Text>
-                <View className="flex-row flex-wrap gap-2 mb-4">
-                  {PRESET_COLORS.map((color) => (
-                    <TouchableOpacity
-                      key={color}
-                      className={`w-10 h-10 rounded-full items-center justify-center ${
-                        formColor === color ? "border-4 border-gray-300 dark:border-gray-500" : ""
-                      }`}
-                      style={{ backgroundColor: color }}
-                      onPress={() => setFormColor(color)}
-                    />
-                  ))}
-                </View>
-              </ScrollView>
-
-              {/* Footer */}
-              <View className="flex-row gap-3 mt-4">
-                <TouchableOpacity
-                  className="flex-1 py-3 rounded-xl bg-gray-200 dark:bg-gray-700 items-center"
-                  onPress={() => setModalVisible(false)}
-                >
-                  <Text className="text-gray-700 dark:text-gray-300 font-semibold">取消</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="flex-1 py-3 rounded-xl bg-blue-600 items-center"
-                  onPress={handleSave}
-                >
-                  <Text className="text-white font-semibold">保存</Text>
-                </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       </View>
     </Screen>
