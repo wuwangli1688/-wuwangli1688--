@@ -264,6 +264,7 @@ export default function ProfileScreen() {
         )}
 
         {/* Data Management */}
+        {role !== "child" && (
         <View style={styles.actionsSection}>
           <Text style={styles.actionsTitle}>数据管理</Text>
 
@@ -288,6 +289,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           </View>
+        )}
 
         {/* System */}
         <View style={styles.actionsSection}>

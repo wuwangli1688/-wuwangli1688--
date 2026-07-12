@@ -16,6 +16,7 @@ import { Link, router as expoRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
 import { authFetch } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -56,6 +57,7 @@ function getIconName(name: string): keyof typeof FontAwesome6.glyphMap {
 export default function AddScreen() {
   const insets = useSafeAreaInsets();
   const router = useSafeRouter();
+  const { role } = useAuth();
   const [type, setType] = useState<"expense" | "income">("expense");
   const [categories, setCategories] = useState<Category[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
@@ -137,7 +139,8 @@ export default function AddScreen() {
       setNote("");
       setProject("");
       setSelectedCategory(null);
-      Alert.alert("成功", "记录已保存", [
+      const successMsg = role === 'child' ? "记录已提交，等待主账号审核" : "记录已保存";
+      Alert.alert("成功", successMsg, [
         { text: "继续记账", style: "default" },
         { text: "返回首页", onPress: () => router.navigate("/") },
       ]);
@@ -302,6 +305,16 @@ export default function AddScreen() {
             <FontAwesome6 name="calendar" size={16} color="#64748B" />
           </View>
         </ScrollView>
+
+        {/* Sub-account notice banner */}
+        {role === 'child' && (
+          <View style={[styles.pendingBanner, { paddingBottom: insets.bottom + 16 }]}>
+            <View style={styles.pendingBannerInner}>
+              <FontAwesome6 name="clock" size={14} color="#D97706" />
+              <Text style={styles.pendingBannerText}>提交后需等待主账号审核</Text>
+            </View>
+          </View>
+        )}
 
         {/* Save Button */}
         <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
@@ -504,5 +517,28 @@ const styles = StyleSheet.create({
   storeChipTextActive: {
     color: "#FFFFFF",
     fontWeight: "600",
+  },
+  pendingBanner: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E2E8F0",
+  },
+  pendingBannerInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#FEF3C7",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  pendingBannerText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#92400E",
   },
 });

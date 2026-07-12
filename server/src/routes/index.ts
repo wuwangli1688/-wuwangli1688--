@@ -62,6 +62,10 @@ router.get("/categories/by-type", async (req: AuthenticatedRequest, res: Respons
 // POST /api/v1/categories - Create custom category
 router.post("/categories", async (req: AuthenticatedRequest, res: Response) => {
 	try {
+		// Child accounts cannot manage categories
+		if (req.userRole === 'child') {
+			return res.status(403).json({ error: "子账号不能管理分类" });
+		}
 		const client = getSupabaseClient();
 		const userId = req.userId!;
 		const { name, icon, type, color } = req.body;
@@ -84,6 +88,10 @@ router.post("/categories", async (req: AuthenticatedRequest, res: Response) => {
 // PUT /api/v1/categories/:id - Update custom category
 router.put("/categories/:id", async (req: AuthenticatedRequest, res: Response) => {
 	try {
+		// Child accounts cannot manage categories
+		if (req.userRole === 'child') {
+			return res.status(403).json({ error: "子账号不能管理分类" });
+		}
 		const client = getSupabaseClient();
 		const userId = req.userId!;
 		const { id } = req.params;
@@ -116,6 +124,10 @@ router.put("/categories/:id", async (req: AuthenticatedRequest, res: Response) =
 // DELETE /api/v1/categories/:id - Delete custom category
 router.delete("/categories/:id", async (req: AuthenticatedRequest, res: Response) => {
 	try {
+		// Child accounts cannot manage categories
+		if (req.userRole === 'child') {
+			return res.status(403).json({ error: "子账号不能管理分类" });
+		}
 		const client = getSupabaseClient();
 		const userId = req.userId!;
 		const { id } = req.params;
@@ -136,8 +148,8 @@ router.delete("/categories/:id", async (req: AuthenticatedRequest, res: Response
 // ==================== Transactions ====================
 
 // Helper: get visible user IDs for current user
-// Parent sees own + all sub-accounts' approved transactions
-// Child sees only own approved transactions
+// Parent sees own + all sub-accounts' transactions
+// Child sees only own transactions
 async function getVisibleUserIds(client: any, userId: string, role: string, parentUserId: string | null): Promise<string[]> {
   if (role === 'parent') {
     // Get sub-account IDs
@@ -185,8 +197,13 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
     let query = client
       .from("transactions")
       .select("id, amount, type")
-      .eq("status", "approved")
       .in("user_id", visibleIds);
+
+    // Parent accounts: only approved transactions
+    // Child accounts: ALL their own transactions (including pending)
+    if (role === 'parent') {
+      query = query.eq("status", "approved");
+    }
 
     if (start_date) {
       query = query.gte("date", start_date as string);
@@ -247,8 +264,13 @@ router.get("/transactions/stats-by-category", async (req: AuthenticatedRequest, 
       .from("transactions")
       .select("amount, category_id, categories(name, icon, color)")
       .eq("type", type as string)
-      .eq("status", "approved")
       .in("user_id", visibleIds);
+
+    // Parent accounts: only approved transactions
+    // Child accounts: ALL their own transactions (including pending)
+    if (role === 'parent') {
+      query = query.eq("status", "approved");
+    }
 
     if (start_date) {
       query = query.gte("date", start_date as string);
@@ -318,9 +340,14 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
     let query = client
       .from("transactions")
       .select("id, amount, type, category_id, note, date, status, user_id, store_id, created_at, categories(name, icon, color), stores(name)", { count: "exact" })
-      .eq("status", "approved")
       .in("user_id", visibleIds)
       .order("date", { ascending: false });
+
+    // Parent accounts: only approved transactions
+    // Child accounts: ALL their own transactions (including pending, approved, rejected)
+    if (role === 'parent') {
+      query = query.eq("status", "approved");
+    }
 
     if (type && ["income", "expense"].includes(type as string)) {
       query = query.eq("type", type as string);
@@ -416,6 +443,11 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
 // PUT /api/v1/transactions/:id
 router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Child accounts cannot modify records
+    if (req.userRole === 'child') {
+      return res.status(403).json({ error: "子账号不能修改记录" });
+    }
+
     const { id } = req.params;
     const { amount, type, category_id, note, date, project } = req.body;
     const userId = req.userId!;
@@ -448,6 +480,11 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
 // DELETE /api/v1/transactions/:id
 router.delete("/transactions/:id", async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Child accounts cannot delete records
+    if (req.userRole === 'child') {
+      return res.status(403).json({ error: "子账号不能删除记录" });
+    }
+
     const { id } = req.params;
     const userId = req.userId!;
     const client = getSupabaseClient();

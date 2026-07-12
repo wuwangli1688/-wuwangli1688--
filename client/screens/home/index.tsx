@@ -23,6 +23,7 @@ interface Transaction {
   note: string | null;
   project: string | null;
   date: string;
+  status?: string;
   categories?: { name: string; icon: string; color: string } | null;
 }
 
@@ -265,6 +266,13 @@ export default function HomeScreen() {
               <Text style={styles.itemTitle} numberOfLines={1}>
                 {item.project || cat?.name || "未分类"}
               </Text>
+              {item.status && item.status !== "approved" && (
+                <View style={[styles.statusBadge, item.status === "pending" ? styles.statusPending : styles.statusRejected]}>
+                  <Text style={[styles.statusBadgeText, { color: item.status === "pending" ? "#92400E" : "#991B1B" }]}>
+                    {item.status === "pending" ? "待审核" : "已驳回"}
+                  </Text>
+                </View>
+              )}
               {item.project ? (
                 <Text style={styles.itemNote} numberOfLines={1}>
                   {cat?.name || "未分类"}{item.note ? ` · ${item.note}` : ""}
@@ -613,6 +621,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: COLORS.text,
+  },
+  statusBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    marginLeft: 4,
+  },
+  statusPending: {
+    backgroundColor: "#FEF3C7",
+  },
+  statusRejected: {
+    backgroundColor: "#FEE2E2",
+  },
+  statusBadgeText: {
+    fontSize: 9,
+    fontWeight: "700",
   },
   itemNote: {
     fontSize: 10,

@@ -15,6 +15,7 @@ import { useFocusEffect } from "expo-router";
 import { Screen } from "@/components/Screen";
 import { authFetch } from "@/lib/supabase";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
+import { useAuth } from "@/contexts/AuthContext";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -27,6 +28,8 @@ interface Category {
 
 export default function CategoriesScreen() {
   const router = useSafeRouter();
+  const { user } = useAuth();
+  const isChild = user?.role === "child";
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -147,22 +150,24 @@ export default function CategoriesScreen() {
           {item.user_id ? "自定义分类" : "系统默认"}
         </Text>
       </View>
-      <View className="flex-row gap-2">
-        <TouchableOpacity
-          className="px-3 py-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg"
-          onPress={() => openEdit(item)}
-        >
-          <Text className="text-blue-600 dark:text-blue-400 text-sm font-medium">编辑</Text>
-        </TouchableOpacity>
-        {item.user_id && (
+      {!isChild && (
+        <View className="flex-row gap-2">
           <TouchableOpacity
-            className="px-3 py-2 bg-red-50 dark:bg-red-900/30 rounded-lg"
-            onPress={() => handleDelete(item)}
+            className="px-3 py-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg"
+            onPress={() => openEdit(item)}
           >
-            <Text className="text-red-600 dark:text-red-400 text-sm font-medium">删除</Text>
+            <Text className="text-blue-600 dark:text-blue-400 text-sm font-medium">编辑</Text>
           </TouchableOpacity>
-        )}
-      </View>
+          {item.user_id && (
+            <TouchableOpacity
+              className="px-3 py-2 bg-red-50 dark:bg-red-900/30 rounded-lg"
+              onPress={() => handleDelete(item)}
+            >
+              <Text className="text-red-600 dark:text-red-400 text-sm font-medium">删除</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 
@@ -175,12 +180,14 @@ export default function CategoriesScreen() {
             <Text className="text-blue-600 text-base">← 返回</Text>
           </TouchableOpacity>
           <Text className="text-lg font-bold text-gray-900 dark:text-white flex-1">分类管理</Text>
-          <TouchableOpacity
-            className="bg-blue-600 px-4 py-2 rounded-lg"
-            onPress={() => { setFormName(''); setFormType('expense'); setEditing(null); setModalVisible(true); }}
-          >
-            <Text className="text-white font-medium text-sm">新增</Text>
-          </TouchableOpacity>
+          {!isChild && (
+            <TouchableOpacity
+              className="bg-blue-600 px-4 py-2 rounded-lg"
+              onPress={() => { setFormName(''); setFormType('expense'); setEditing(null); setModalVisible(true); }}
+            >
+              <Text className="text-white font-medium text-sm">新增</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <FlatList

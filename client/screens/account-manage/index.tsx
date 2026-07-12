@@ -27,6 +27,13 @@ interface SubAccount {
   displayName: string;
   role: string;
   createdAt: string;
+  store_ids?: string[];
+}
+
+interface Store {
+  id: string;
+  name: string;
+  notes: string | null;
 }
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
@@ -42,6 +49,8 @@ export default function AccountManageScreen() {
   const [formPassword, setFormPassword] = useState('');
   const [formName, setFormName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [storesList, setStoresList] = useState<Store[]>([]);
 
   const fetchSubAccounts = useCallback(async () => {
     try {
@@ -57,25 +66,41 @@ export default function AccountManageScreen() {
     }
   }, []);
 
+  const fetchStores = useCallback(async () => {
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores`);
+      if (res.ok) {
+        const data = await res.json();
+        const storeList = data.data || [];
+        setStoresList(storeList);
+      }
+    } catch {
+      // silently fail
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       fetchSubAccounts();
-    }, [fetchSubAccounts])
+      fetchStores();
+    }, [fetchSubAccounts, fetchStores])
   );
-
-  const handleAdd = () => {
-    setEditingAccount(null);
-    setFormEmail('');
-    setFormPassword('');
-    setFormName('');
-    setModalVisible(true);
-  };
 
   const handleEdit = (account: SubAccount) => {
     setEditingAccount(account);
     setFormEmail(account.email);
     setFormPassword('');
     setFormName(account.displayName);
+    setSelectedStoreIds(account.store_ids || []);
+    setModalVisible(true);
+  };
+
+  const handleAdd = () => {
+    setEditingAccount(null);
+    setFormEmail('');
+    setFormPassword('');
+    setFormName('');
+    setSelectedStoreIds([]);
     setModalVisible(true);
   };
 
@@ -115,8 +140,9 @@ export default function AccountManageScreen() {
       }
       setSubmitting(true);
       try {
-        const body: Record<string, string> = { displayName: formName.trim() };
+        const body: Record<string, string | string[]> = { displayName: formName.trim() };
         if (formPassword) body.password = formPassword;
+        body.store_ids = selectedStoreIds;
         const res = await authFetch(
           `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/sub-accounts/${editingAccount.id}`,
           {
@@ -156,6 +182,7 @@ export default function AccountManageScreen() {
               email: formEmail.trim(),
               password: formPassword,
               displayName: formName.trim() || '子账号',
+              store_ids: selectedStoreIds,
             }),
           }
         );
@@ -300,6 +327,40 @@ export default function AccountManageScreen() {
                       onChangeText={setFormName}
                     />
                   </View>
+
+                  {storesList.length > 0 && (
+                    <View style={s.inputGroup}>
+                      <Text style={s.label}>关联店铺</Text>
+                      <Text style={s.subLabel}>选择子账号可管理的店铺</Text>
+                      <View style={s.storeList}>
+                        {storesList.map((store) => {
+                          const isSelected = selectedStoreIds.includes(store.id);
+                          return (
+                            <TouchableOpacity
+                              key={store.id}
+                              style={[s.storeItem, isSelected && s.storeItemActive]}
+                              onPress={() => {
+                                setSelectedStoreIds((prev) =>
+                                  isSelected
+                                    ? prev.filter((id) => id !== store.id)
+                                    : [...prev, store.id]
+                                );
+                              }}
+                            >
+                              <View style={[s.storeCheckbox, isSelected && s.storeCheckboxActive]}>
+                                {isSelected && (
+                                  <FontAwesome6 name="check" size={12} color="#fff" />
+                                )}
+                              </View>
+                              <Text style={[s.storeName, isSelected && s.storeNameActive]}>
+                                {store.name}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
                 </View>
 
                 <View style={s.modalFooter}>
@@ -414,6 +475,52 @@ const s = StyleSheet.create({
     height: 48,
     fontSize: 16,
     color: '#1E293B',
+  },
+  subLabel: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: -2,
+  },
+  storeList: {
+    gap: 8,
+    marginTop: 4,
+  },
+  storeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  storeItemActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#2563EB',
+  },
+  storeCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storeCheckboxActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  storeName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#475569',
+  },
+  storeNameActive: {
+    color: '#1E293B',
+    fontWeight: '600',
   },
   modalFooter: {
     flexDirection: 'row',

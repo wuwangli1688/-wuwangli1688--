@@ -53,6 +53,11 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
 // POST /api/v1/stores - Create a store
 router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Child accounts cannot manage stores
+    if (req.userRole === 'child') {
+      return res.status(403).json({ error: '子账号不能管理店铺' });
+    }
+
     const { name, notes } = req.body;
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ error: '请提供店铺名称' });
@@ -127,6 +132,11 @@ router.post('/permissions', requireParent, async (req: AuthenticatedRequest, res
 // PUT /api/v1/stores/:id - Update store name
 router.put('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Child accounts cannot manage stores
+    if (req.userRole === 'child') {
+      return res.status(403).json({ error: '子账号不能管理店铺' });
+    }
+
     const { id } = req.params;
     const { name, notes } = req.body;
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -170,6 +180,11 @@ router.put('/:id', async (req: AuthenticatedRequest, res: Response) => {
 // DELETE /api/v1/stores/:id - Delete a store
 router.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Child accounts cannot manage stores
+    if (req.userRole === 'child') {
+      return res.status(403).json({ error: '子账号不能管理店铺' });
+    }
+
     const { id } = req.params;
     const client = getSupabaseClient();
     const role = req.userRole!;

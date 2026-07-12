@@ -146,7 +146,7 @@ router.post('/change-password', async (req: AuthenticatedRequest, res: Response)
 // POST /api/v1/accounts/sub-accounts - Create sub-account (parent only)
 router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { email, password, displayName } = req.body;
+    const { email, password, displayName, store_ids } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: '请提供邮箱和密码' });
     }
@@ -169,19 +169,37 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
       return res.status(400).json({ error: '创建账号失败: ' + createError.message });
     }
 
+    const newUserId = newUser.user.id;
+
     // Create user profile
     await serviceClient.from('user_profiles').insert({
-      id: newUser.user.id,
+      id: newUserId,
       role: 'child',
       parentUserId: parentId,
       displayName: displayName || '子账号',
     });
 
+    // Grant store permissions if store_ids provided
+    if (store_ids && Array.isArray(store_ids) && store_ids.length > 0) {
+      const inserts = store_ids.map((storeId: string) => ({
+        store_id: storeId,
+        user_id: newUserId,
+        granted_by: parentId,
+      }));
+      const { error: permError } = await serviceClient
+        .from('store_permissions')
+        .insert(inserts);
+      if (permError) {
+        console.error('Grant store permissions error:', permError);
+      }
+    }
+
     return res.status(201).json({
-      id: newUser.user.id,
+      id: newUserId,
       email: newUser.user.email,
       displayName: displayName || '子账号',
       role: 'child',
+      store_ids: store_ids || [],
     });
   } catch (error) {
     console.error('Create sub-account error:', error);
@@ -238,7 +256,7 @@ router.get('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res
 router.put('/sub-accounts/:id', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { displayName, password } = req.body;
+    const { displayName, password, store_ids } = req.body;
     const parentId = req.userId!;
     const serviceClient = getSupabaseClient();
 
@@ -269,6 +287,30 @@ router.put('/sub-accounts/:id', requireParent, async (req: AuthenticatedRequest,
         return res.status(400).json({ error: '密码长度至少6位' });
       }
       await (serviceClient.auth.admin as any).updateUserById(id, { password });
+    }
+
+    // Update store permissions if store_ids provided
+    if (store_ids !== undefined && Array.isArray(store_ids)) {
+      // Clear existing permissions
+      await serviceClient
+        .from('store_permissions')
+        .delete()
+        .eq('user_id', id);
+
+      // Insert new permissions
+      if (store_ids.length > 0) {
+        const inserts = store_ids.map((storeId: string) => ({
+          store_id: storeId,
+          user_id: id,
+          granted_by: parentId,
+        }));
+        const { error: permError } = await serviceClient
+          .from('store_permissions')
+          .insert(inserts);
+        if (permError) {
+          console.error('Update store permissions error:', permError);
+        }
+      }
     }
 
     return res.json({ message: '更新成功' });
