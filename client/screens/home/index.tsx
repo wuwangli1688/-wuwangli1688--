@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,16 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  Platform,
+  Alert,
+  ScrollView,
 } from "react-native";
 import { Screen } from "@/components/Screen";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { authFetch } from "@/lib/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -63,6 +68,16 @@ export default function HomeScreen() {
   const nowRef = useRef(new Date());
   const [viewYear, setViewYear] = useState(nowRef.current.getFullYear());
   const [viewMonth, setViewMonth] = useState(nowRef.current.getMonth() + 1);
+  
+  // Store filter state
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const [storeModalVisible, setStoreModalVisible] = useState(false);
+  
+  // Export state
+  const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [exportTimeRange, setExportTimeRange] = useState<'current' | 'last' | 'custom' | 'all'>('current');
+  const [exporting, setExporting] = useState(false);
 
   const fetchMonthData = useCallback(async (year: number, month: number) => {
     setError(null);
@@ -73,9 +88,11 @@ export default function HomeScreen() {
       const monthEnd = `${year}-${pad(month)}-${pad(lastDay)}`;
 
       // 1. Fetch this month's transactions (date ASC for running balance)
-      const txRes = await authFetch(
-        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?start_date=${monthStart}&end_date=${monthEnd}&size=200&order=date.asc`
-      );
+      let txUrl = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?start_date=${monthStart}&end_date=${monthEnd}&size=200&order=date.asc`;
+      if (selectedStoreId) {
+        txUrl += `&store_id=${selectedStoreId}`;
+      }
+      const txRes = await authFetch(txUrl);
       if (!txRes.ok) throw new Error("加载交易记录失败");
       const txData = await txRes.json();
       const transactions: Transaction[] = txData.data || [];
@@ -84,9 +101,11 @@ export default function HomeScreen() {
       const prevMonthEnd = `${year}-${pad(month - 1 === 0 ? 12 : month - 1)}-${pad(
         new Date(year, month - 1, 0).getDate()
       )}`;
-      const summaryRes = await authFetch(
-        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary?end_date=${prevMonthEnd}`
-      );
+      let summaryUrl = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary?end_date=${prevMonthEnd}`;
+      if (selectedStoreId) {
+        summaryUrl += `&store_id=${selectedStoreId}`;
+      }
+      const summaryRes = await authFetch(summaryUrl);
       let carryForward = 0;
       if (summaryRes.ok) {
         const summaryData = await summaryRes.json();
@@ -127,7 +146,7 @@ export default function HomeScreen() {
       const message = err instanceof Error ? err.message : "加载失败";
       setError(message);
     }
-  }, []);
+  }, [viewYear, viewMonth, selectedStoreId]);
 
   useFocusEffect(
     useCallback(() => {
