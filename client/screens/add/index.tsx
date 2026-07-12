@@ -34,6 +34,7 @@ interface Store {
 }
 
 const iconMap: Record<string, keyof typeof FontAwesome6.glyphMap> = {
+  // 系统默认分类
   restaurant: "utensils",
   car: "car",
   "shopping-bag": "shopping-bag",
@@ -48,10 +49,181 @@ const iconMap: Record<string, keyof typeof FontAwesome6.glyphMap> = {
   "trending-up": "arrow-trend-up",
   clock: "clock",
   "plus-circle": "circle-plus",
+  // 扩展常见商务分类
+  gift: "gift",
+  users: "users",
+  "user-gear": "user-gear",
+  wrench: "wrench",
+  truck: "truck",
+  toolbox: "toolbox",
+  "hand-holding-dollar": "hand-holding-dollar",
+  "sack-dollar": "sack-dollar",
+  "money-bill": "money-bill",
+  "building-columns": "building-columns",
+  "chart-line": "chart-line",
+  "chart-pie": "chart-pie",
+  "file-invoice": "file-invoice",
+  "file-invoice-dollar": "file-invoice-dollar",
+  "receipt": "receipt",
+  "store": "store",
+  "shop": "shop",
+  "warehouse": "warehouse",
+  "box": "box",
+  "boxes": "boxes",
+  "box-open": "box-open",
+  "truck-moving": "truck-moving",
+  "truck-fast": "truck-fast",
+  "road": "road",
+  "gas-pump": "gas-pump",
+  "oil-can": "oil-can",
+  "hammer": "hammer",
+  "helmet-safety": "helmet-safety",
+  "paint-roller": "paint-roller",
+  "plug": "plug",
+  "lightbulb": "lightbulb",
+  "water": "water",
+  "fire": "fire",
+  "newspaper": "newspaper",
+  "print": "print",
+  "envelope": "envelope",
+  "credit-card": "credit-card",
+  "coins": "coins",
+  "scale-balanced": "scale-balanced",
+  "gavel": "gavel",
+  "shield": "shield",
+  "lock": "lock",
+  "key": "key",
+  "tag": "tag",
+  "tags": "tags",
+  "barcode": "barcode",
+  "qrcode": "qrcode",
+  "camera": "camera",
+  "video": "video",
+  "music": "music",
+  "headphones": "headphones",
+  "laptop": "laptop",
+  "computer": "computer",
+  "mobile": "mobile",
+  "tablet": "tablet",
+  "wifi": "wifi",
+  "cloud": "cloud",
+  "database": "database",
+  "server": "server",
+  "seedling": "seedling",
+  "tree": "tree",
+  "leaf": "leaf",
+  "recycle": "recycle",
+  "dumbbell": "dumbbell",
+  "futbol": "futbol",
+  "basketball": "basketball",
+  "plane": "plane",
+  "ship": "ship",
+  "train": "train",
+  "bus": "bus",
+  "bicycle": "bicycle",
+  "dog": "dog",
+  "cat": "cat",
+  "paw": "paw",
+  "cake": "cake",
+  "ice-cream": "ice-cream",
+  "mug-hot": "mug-hot",
+  "wine-bottle": "wine-bottle",
+  "beer": "beer",
+  "cocktail": "cocktail",
+  "tent": "tent",
+  "mountain": "mountain",
+  "umbrella": "umbrella",
+  "snowflake": "snowflake",
+  "sun": "sun",
+  "moon": "moon",
+  "star": "star",
+  "globe": "globe",
+  "compass": "compass",
+  "map": "map",
+  "location-dot": "location-dot",
+  "flag": "flag",
+  "certificate": "certificate",
+  "medal": "medal",
+  "trophy": "trophy",
+  "gem": "gem",
+  "diamond": "diamond",
+  "crown": "crown",
+  "robot": "robot",
+  "gear": "gear",
+  "sliders": "sliders",
+  "palette": "palette",
+  "pencil": "pencil",
+  "pen": "pen",
+  "clipboard": "clipboard",
+  "calculator": "calculator",
+  "ruler": "ruler",
+  "scissors": "scissors",
+  "eye": "eye",
+  "search": "search",
+  "bell": "bell",
+  "comment": "comment",
+  "message": "message",
+  "share": "share",
+  "thumbs-up": "thumbs-up",
+  "thumbs-down": "thumbs-down",
 };
 
-function getIconName(name: string): keyof typeof FontAwesome6.glyphMap {
-  return (iconMap[name] || "circle") as keyof typeof FontAwesome6.glyphMap;
+// 根据名称智能匹配图标
+function getIconName(icon: string, name?: string): keyof typeof FontAwesome6.glyphMap {
+  if (icon && iconMap[icon]) {
+    return iconMap[icon] as keyof typeof FontAwesome6.glyphMap;
+  }
+  // 根据名称联想匹配
+  if (name) {
+    const nameIconMap: Record<string, keyof typeof FontAwesome6.glyphMap> = {
+      '礼金': 'gift',
+      '员工工资': 'users',
+      '工资': 'users',
+      '付第三方成本': 'hand-holding-dollar',
+      '修车': 'wrench',
+      '请车提送货': 'truck',
+      '物流': 'truck-fast',
+      '快递': 'truck-fast',
+      '运费': 'truck-moving',
+      '加油': 'gas-pump',
+      '油费': 'oil-can',
+      '水电': 'plug',
+      '房租': 'house',
+      '租金': 'house',
+      '装修': 'paint-roller',
+      '办公用品': 'laptop',
+      '文具': 'pencil',
+      '材料': 'box',
+      '原料': 'box',
+      '采购': 'shopping-bag',
+      '广告': 'newspaper',
+      '推广': 'bullhorn',
+      '差旅': 'plane',
+      '住宿': 'hotel',
+      '餐饮': 'utensils',
+      '交通': 'car',
+      '娱乐': 'film',
+      '医疗': 'heart',
+      '教育': 'book',
+      '通讯': 'phone',
+      '购物': 'shopping-bag',
+      '住房': 'house',
+      '其他支出': 'ellipsis',
+      '其他收入': 'ellipsis',
+      '工资收入': 'sack-dollar',
+      '奖金': 'award',
+      '投资': 'chart-line',
+      '理财': 'coins',
+      '退款': 'rotate-left',
+      '报销': 'file-invoice-dollar',
+    };
+    for (const [key, iconName] of Object.entries(nameIconMap)) {
+      if (name.includes(key)) {
+        return iconName as keyof typeof FontAwesome6.glyphMap;
+      }
+    }
+  }
+  return (iconMap[icon] || "circle") as keyof typeof FontAwesome6.glyphMap;
 }
 
 export default function AddScreen() {
@@ -241,22 +413,25 @@ export default function AddScreen() {
             </Link>
           </View>
           <View style={styles.categoryGrid}>
-            {categories.map((cat) => (
-              <TouchableOpacity
-                key={cat.id}
-                style={[
-                  styles.categoryItem,
-                  selectedCategory === cat.id && { backgroundColor: `${cat.color}20`, borderColor: cat.color },
-                ]}
-                onPress={() => setSelectedCategory(cat.id)}
-                onLongPress={() => router.push('/categories')}
-              >
-                <View style={[styles.categoryIcon, { backgroundColor: `${cat.color}15` }]}>
-                  <FontAwesome6 name={getIconName(cat.icon)} size={20} color={cat.color} />
-                </View>
-                <Text style={styles.categoryName}>{cat.name}</Text>
-              </TouchableOpacity>
-            ))}
+            {categories.map((cat) => {
+              const catColor = cat.color || '#6B7280';
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.categoryItem,
+                    selectedCategory === cat.id && { backgroundColor: `${catColor}20`, borderColor: catColor },
+                  ]}
+                  onPress={() => setSelectedCategory(cat.id)}
+                  onLongPress={() => router.push('/categories')}
+                >
+                  <View style={[styles.categoryIcon, { backgroundColor: `${catColor}15` }]}>
+                    <FontAwesome6 name={getIconName(cat.icon, cat.name)} size={20} color={catColor} />
+                  </View>
+                  <Text style={styles.categoryName}>{cat.name}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* Note Input */}

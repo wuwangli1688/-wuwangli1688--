@@ -74,7 +74,7 @@ router.post("/categories", async (req: AuthenticatedRequest, res: Response) => {
 
 		const { data, error } = await client
 			.from("categories")
-			.insert({ name, icon: icon || "📦", type, color: color || "#6B7280", user_id: userId })
+			.insert({ name, icon: icon || "box", type, color: color || "#6B7280", user_id: userId })
 			.select("id, name, icon, type, color, sort_order, user_id")
 			.single();
 		if (error) throw new Error(`创建失败: ${error.message}`);
