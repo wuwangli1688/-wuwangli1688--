@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   TextInput,
+  Keyboard,
   Dimensions,
 } from "react-native";
 import { Screen } from "@/components/Screen";
@@ -145,23 +146,47 @@ export default function HomeScreen() {
         setError(null);
         // authFetch is already imported at top
 
-        const params = new URLSearchParams({
-          year: year.toString(),
-          month: month.toString(),
+        const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+        const lastDay = new Date(year, month, 0).getDate();
+        const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+        // Fetch transaction list
+        const listParams = new URLSearchParams({
+          start_date: startDate,
+          end_date: endDate,
         });
         if (selectedStoreId) {
-          params.append("store_id", selectedStoreId);
+          listParams.append("store_id", selectedStoreId);
         }
 
-        const res = await authFetch(
-          `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?${params}`
-        );
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
+        const [listRes, summaryRes] = await Promise.all([
+          authFetch(
+            `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?${listParams}`
+          ),
+          authFetch(
+            `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary?${listParams}`
+          ),
+        ]);
+
+        if (!listRes.ok) {
+          const errData = await listRes.json().catch(() => ({}));
           throw new Error(errData.error || "获取数据失败");
         }
-        const data = await res.json();
-        setMonthData(data);
+
+        const listData = await listRes.json();
+        let summaryData = { total_income: 0, total_expense: 0, balance: 0 };
+        if (summaryRes.ok) {
+          const s = await summaryRes.json();
+          summaryData = s.data || summaryData;
+        }
+
+        setMonthData({
+          data: listData.data || [],
+          pagination: listData.pagination,
+          total_income: Number(summaryData.total_income) || 0,
+          total_expense: Number(summaryData.total_expense) || 0,
+          balance: Number(summaryData.balance) || 0,
+        });
       } catch (e: any) {
         setError(e.message || "网络错误");
       } finally {
@@ -221,26 +246,34 @@ export default function HomeScreen() {
       if (exportEndDate) params.append("end_date", exportEndDate);
       if (selectedStoreId) params.append("store_id", selectedStoreId);
 
-      const res = await authFetch(
-        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/export?${params}`
-      );
+      const url = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/export/transactions?${params}`;
+      const res = await authFetch(url);
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "导出失败");
       }
 
-      const csvText = await res.text();
-      const filename = `记账导出_${exportStartDate || "全部"}_${exportEndDate || "全部"}.csv`;
+      const filename = `记账明细_${exportStartDate || "全部"}_${exportEndDate || "全部"}.xlsx`;
       const fs = FileSystem as any;
       const filePath = `${fs.cacheDirectory}${filename}`;
-      await fs.writeAsStringAsync(filePath, csvText, {
-        encoding: fs.EncodingType.UTF8,
+
+      // Read response as array buffer and convert to base64
+      const arrayBuffer = await res.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      await fs.writeAsStringAsync(filePath, base64, {
+        encoding: fs.EncodingType.Base64,
       });
 
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(filePath, {
-          mimeType: "text/csv",
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           dialogTitle: "导出记账数据",
         });
       } else {
@@ -641,7 +674,7 @@ export default function HomeScreen() {
         onRequestClose={() => setExportModalVisible(false)}
       >
         <TouchableWithoutFeedback
-          onPress={() => {}}
+          onPress={Keyboard.dismiss}
           disabled={Platform.OS === "web"}
         >
           <KeyboardAvoidingView

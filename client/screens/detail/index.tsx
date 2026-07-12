@@ -1,0 +1,412 @@
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  ScrollView,
+  Alert,
+  StyleSheet,
+  Platform,
+} from 'react-native';
+import { Screen } from '@/components/Screen';
+import { useSafeRouter, useSafeSearchParams } from '@/hooks/useSafeRouter';
+import { useFocusEffect } from 'expo-router';
+import { FontAwesome6 } from '@expo/vector-icons';
+import { authFetch } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+
+const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+
+interface TransactionDetail {
+  id: number;
+  amount: string;
+  type: 'income' | 'expense';
+  category_id: string;
+  note: string | null;
+  date: string;
+  status: string;
+  user_id: string;
+  store_id: string | null;
+  created_at: string;
+  updated_at?: string;
+  categories: { name: string; icon: string; color: string } | null;
+  stores: { name: string } | null;
+}
+
+export default function DetailScreen() {
+  const { id } = useSafeSearchParams<{ id: number }>();
+  const router = useSafeRouter();
+  const { role } = useAuth();
+  const [detail, setDetail] = useState<TransactionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchDetail = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await authFetch(
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/${id}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setDetail(data.data);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        Alert.alert('加载失败', err.error || '无法加载记录');
+        router.back();
+      }
+    } catch {
+      Alert.alert('网络错误', '请检查网络连接');
+      router.back();
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDetail();
+    }, [fetchDetail])
+  );
+
+  const handleDelete = () => {
+    Alert.alert('删除记录', '确定要删除这条记录吗？此操作不可恢复。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除',
+        style: 'destructive',
+        onPress: async () => {
+          setDeleting(true);
+          try {
+            const res = await authFetch(
+              `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/${id}`,
+              { method: 'DELETE' }
+            );
+            if (res.ok) {
+              Alert.alert('已删除', '记录已删除', [
+                { text: '返回', onPress: () => router.back() },
+              ]);
+            } else {
+              const err = await res.json().catch(() => ({}));
+              Alert.alert('删除失败', err.error || '无法删除记录');
+            }
+          } catch {
+            Alert.alert('网络错误', '请检查网络连接');
+          } finally {
+            setDeleting(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  if (loading) {
+    return (
+      <Screen>
+        <View style={s.center}>
+          <ActivityIndicator size="large" color="#4F46E5" />
+          <Text style={s.loadingText}>加载中...</Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <Screen>
+        <View style={s.center}>
+          <FontAwesome6 name="circle-exclamation" size={48} color="#94A3B8" />
+          <Text style={s.emptyText}>记录不存在</Text>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+            <Text style={s.backBtnText}>返回</Text>
+          </TouchableOpacity>
+        </View>
+      </Screen>
+    );
+  }
+
+  const isIncome = detail.type === 'income';
+  const amount = parseFloat(detail.amount);
+  const catName = detail.categories?.name || '未分类';
+  const catIcon = detail.categories?.icon || 'circle';
+  const catColor = detail.categories?.color || '#8B7E6E';
+  const storeName = detail.stores?.name || null;
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}年${m}月${day}日`;
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${m}月${day}日 ${h}:${min}`;
+  };
+
+  return (
+    <Screen>
+      {/* Header */}
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.headerBtn}>
+          <FontAwesome6 name="arrow-left" size={20} color="#1E293B" />
+        </TouchableOpacity>
+        <Text style={s.headerTitle}>交易详情</Text>
+        <View style={{ width: 36 }} />
+      </View>
+
+      <ScrollView style={s.body} contentContainerStyle={s.bodyContent}>
+        {/* Amount Card */}
+        <View style={s.amountCard}>
+          <Text style={[s.amountLabel, { color: isIncome ? '#10B981' : '#EF4444' }]}>
+            {isIncome ? '收入' : '支出'}
+          </Text>
+          <Text style={[s.amountValue, { color: isIncome ? '#10B981' : '#EF4444' }]}>
+            {isIncome ? '+' : '-'}¥{amount.toFixed(2)}
+          </Text>
+        </View>
+
+        {/* Info Card */}
+        <View style={s.infoCard}>
+          {/* Category */}
+          <View style={s.infoRow}>
+            <Text style={s.infoLabel}>分类</Text>
+            <View style={s.infoValueRow}>
+              <View style={[s.catIconWrap, { backgroundColor: `${catColor}20` }]}>
+                <FontAwesome6 name={catIcon as any} size={16} color={catColor} />
+              </View>
+              <Text style={s.infoValue}>{catName}</Text>
+            </View>
+          </View>
+
+          <View style={s.divider} />
+
+          {/* Date */}
+          <View style={s.infoRow}>
+            <Text style={s.infoLabel}>日期</Text>
+            <Text style={s.infoValue}>{formatDate(detail.date)}</Text>
+          </View>
+
+          <View style={s.divider} />
+
+          {/* Store */}
+          <View style={s.infoRow}>
+            <Text style={s.infoLabel}>店铺</Text>
+            <Text style={s.infoValue}>{storeName || '无'}</Text>
+          </View>
+
+          <View style={s.divider} />
+
+          {/* Note */}
+          <View style={s.infoRow}>
+            <Text style={s.infoLabel}>备注</Text>
+            <Text style={[s.infoValue, s.noteText]}>{detail.note || '无'}</Text>
+          </View>
+
+          <View style={s.divider} />
+
+          {/* Status */}
+          <View style={s.infoRow}>
+            <Text style={s.infoLabel}>状态</Text>
+            <View style={s.statusBadge}>
+              <Text style={s.statusText}>
+                {detail.status === 'approved' ? '已通过' : detail.status === 'pending' ? '待审核' : '已拒绝'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={s.divider} />
+
+          {/* Created At */}
+          <View style={s.infoRow}>
+            <Text style={s.infoLabel}>创建时间</Text>
+            <Text style={s.infoValue}>{formatDateTime(detail.created_at)}</Text>
+          </View>
+        </View>
+
+        {/* Action Buttons */}
+        {role === 'parent' && (
+          <View style={s.actions}>
+            <TouchableOpacity
+              style={s.deleteBtn}
+              onPress={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <ActivityIndicator size="small" color="#EF4444" />
+              ) : (
+                <>
+                  <FontAwesome6 name="trash-can" size={16} color="#EF4444" />
+                  <Text style={s.deleteBtnText}>删除记录</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
+    </Screen>
+  );
+}
+
+const s = StyleSheet.create({
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#64748B',
+    marginTop: 8,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#64748B',
+    marginTop: 12,
+  },
+  backBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+  },
+  backBtnText: {
+    fontSize: 15,
+    color: '#4F46E5',
+    fontWeight: '500',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  headerBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1E293B',
+    textAlign: 'center',
+  },
+  body: {
+    flex: 1,
+  },
+  bodyContent: {
+    padding: 20,
+    gap: 20,
+  },
+  amountCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  amountLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  amountValue: {
+    fontSize: 36,
+    fontWeight: '700',
+  },
+  infoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+  },
+  infoLabel: {
+    fontSize: 15,
+    color: '#64748B',
+  },
+  infoValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoValue: {
+    fontSize: 15,
+    color: '#1E293B',
+    fontWeight: '500',
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: 16,
+  },
+  noteText: {
+    color: '#475569',
+    fontWeight: '400',
+  },
+  catIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+  },
+  statusBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: 13,
+    color: '#059669',
+    fontWeight: '500',
+  },
+  actions: {
+    gap: 12,
+    marginTop: 8,
+  },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  deleteBtnText: {
+    fontSize: 15,
+    color: '#EF4444',
+    fontWeight: '500',
+  },
+});

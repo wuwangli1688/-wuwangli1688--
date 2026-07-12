@@ -88,6 +88,7 @@ export default function RootLayout() {
             <Stack.Screen name="store-detail" options={{ title: "店铺详情" }} />
             <Stack.Screen name="categories" options={{ title: "项目分类" }} />
             <Stack.Screen name="share" options={{ title: "分享应用" }} />
+            <Stack.Screen name="detail" options={{ title: "交易详情" }} />
             <Stack.Screen name="(tabs)" options={{ title: "" }} />
           </Stack>
           <Toast />

@@ -405,6 +405,38 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
   }
 });
 
+// GET /api/v1/transactions/:id - Get single transaction detail
+router.get("/transactions/:id", async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const client = getSupabaseClient();
+    const userId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
+
+    const visibleIds = await getVisibleUserIds(client, userId, role, parentUserId ?? null);
+
+    const { data, error } = await client
+      .from("transactions")
+      .select("id, amount, type, category_id, note, date, status, user_id, store_id, created_at, updated_at, categories(name, icon, color), stores(name)")
+      .eq("id", id)
+      .in("user_id", visibleIds)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: "记录不存在" });
+      }
+      throw new Error(`查询失败: ${error.message}`);
+    }
+
+    res.json({ data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
 // POST /api/v1/transactions - Create transaction
 // For child accounts, status is 'pending' (needs parent approval)
 // For parent accounts, status is 'approved' directly
