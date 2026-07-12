@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -38,6 +38,17 @@ export default function ProfileScreen() {
   const { user, role, email, signOut } = useAuth();
   const router = useSafeRouter();
   const [summary, setSummary] = useState<Summary>({ total_income: "0.00", total_expense: "0.00", balance: "0.00" });
+
+// Compare semantic versions (e.g. "1.0.1" > "1.0.0" returns 1)
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+  }
+  return 0;
+}
   const [totalCount, setTotalCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [exporting, setExporting] = useState(false);
@@ -47,8 +58,21 @@ export default function ProfileScreen() {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<"checking" | "ready" | "downloading" | "done">("checking");
   const [updateVersion, setUpdateVersion] = useState("");
-  const [currentVersion, setCurrentVersion] = useState("1.0.0");
+  const [currentVersion, setCurrentVersion] = useState("1.0.1");
   const [updateDownloadUrl, setUpdateDownloadUrl] = useState("");
+
+  // Load stored version from AsyncStorage on mount
+  useEffect(() => {
+    (async () => {
+      const stored = await AsyncStorage.getItem("app_version");
+      if (stored) {
+        setCurrentVersion(stored);
+      } else {
+        // First run - store default version
+        await AsyncStorage.setItem("app_version", "1.0.1");
+      }
+    })();
+  }, []);
 
   // Display name edit modal
   const [displayNameModalVisible, setDisplayNameModalVisible] = useState(false);
@@ -268,7 +292,7 @@ export default function ProfileScreen() {
       // 获取本地存储的版本号
       const storedVersion = await AsyncStorage.getItem("app_version");
       // 如果服务器版本比本地存储的版本新，则提示更新
-      if (serverVersion !== storedVersion) {
+      if (compareVersions(serverVersion, storedVersion || "1.0.1") > 0) {
         setUpdateVersion(serverVersion);
         setUpdateDownloadUrl(versionData.download_url || "");
         setUpdateStatus("ready");
