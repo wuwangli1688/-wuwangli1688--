@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   FlatList,
   Modal,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -274,7 +275,7 @@ export default function AccountManageScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <View style={s.modalBody}>
+                <ScrollView style={s.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                   <View style={s.inputGroup}>
                     <Text style={s.label}>用户名</Text>
                     <TextInput
@@ -334,7 +335,7 @@ export default function AccountManageScreen() {
                       </View>
                     </View>
                   )}
-                </View>
+                </ScrollView>
 
                 <View style={s.modalFooter}>
                   <TouchableOpacity

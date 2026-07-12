@@ -8,9 +8,10 @@ import {
   ScrollView,
   Alert,
   Modal,
-  FlatList,
   Platform,
   KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import { Screen } from "@/components/Screen";
 import { FontAwesome6 } from "@expo/vector-icons";
@@ -302,12 +303,7 @@ export default function StoresScreen() {
 
         {/* Add/Edit Store Modal */}
         <Modal visible={storeModalVisible} transparent animationType="slide">
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setStoreModalVisible(false)}
-            disabled={Platform.OS === "web"}
-          >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} disabled={Platform.OS === "web"}>
             <KeyboardAvoidingView
               style={{ flex: 1 }}
               behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -323,7 +319,7 @@ export default function StoresScreen() {
                     </TouchableOpacity>
                   </View>
 
-                  <View style={styles.modalBody}>
+                  <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                     <Text style={styles.inputLabel}>店铺名称</Text>
                     <TextInput
                       style={styles.textInput}
@@ -343,7 +339,7 @@ export default function StoresScreen() {
                       maxLength={200}
                       multiline
                     />
-                  </View>
+                  </ScrollView>
 
                   <View style={styles.modalFooter}>
                     <TouchableOpacity
@@ -363,7 +359,7 @@ export default function StoresScreen() {
                 </View>
               </View>
             </KeyboardAvoidingView>
-          </TouchableOpacity>
+          </TouchableWithoutFeedback>
         </Modal>
 
         {/* Permission Modal */}

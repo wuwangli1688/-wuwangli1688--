@@ -550,7 +550,7 @@ export default function ProfileScreen() {
                     <FontAwesome6 name="xmark" size={20} color="#64748B" />
                   </TouchableOpacity>
                 </View>
-                <View style={styles.modalBody}>
+                <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>当前密码</Text>
                     <TextInput
@@ -584,7 +584,7 @@ export default function ProfileScreen() {
                       secureTextEntry
                     />
                   </View>
-                </View>
+                </ScrollView>
                 <View style={styles.modalFooter}>
                   <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setPasswordModalVisible(false)}>
                     <Text style={styles.cancelBtnText}>取消</Text>
