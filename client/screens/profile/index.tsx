@@ -26,7 +26,6 @@ import { authFetch } from "@/lib/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
-const APP_VERSION = "1.1.0";
 
 interface Summary {
   total_income: string;
@@ -48,6 +47,7 @@ export default function ProfileScreen() {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<"checking" | "ready" | "downloading" | "done">("checking");
   const [updateVersion, setUpdateVersion] = useState("");
+  const [currentVersion, setCurrentVersion] = useState("1.0.0");
   const [updateDownloadUrl, setUpdateDownloadUrl] = useState("");
 
   // Display name edit modal
@@ -245,19 +245,32 @@ export default function ProfileScreen() {
     setUpdateModalVisible(true);
     setUpdateStatus("checking");
     try {
-      const res = await fetch(
-        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/version/check?currentVersion=${APP_VERSION}`
+      // 获取服务器最新版本
+      const currentRes = await fetch(
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/version/current`
       );
-      if (!res.ok) {
+      if (!currentRes.ok) {
         setUpdateStatus("done");
         Alert.alert("检查失败", "无法连接更新服务器");
         setUpdateModalVisible(false);
         return;
       }
-      const data = await res.json();
-      if (data.hasUpdate) {
-        setUpdateVersion(data.latestVersion || "");
-        setUpdateDownloadUrl(data.downloadUrl || "");
+      const versionData = await currentRes.json();
+      const serverVersion = versionData.version;
+      if (!serverVersion) {
+        setUpdateStatus("done");
+        setTimeout(() => {
+          setUpdateModalVisible(false);
+          Alert.alert("检查更新", "当前已是最新版本");
+        }, 500);
+        return;
+      }
+      // 获取本地存储的版本号
+      const storedVersion = await AsyncStorage.getItem("app_version");
+      // 如果服务器版本比本地存储的版本新，则提示更新
+      if (serverVersion !== storedVersion) {
+        setUpdateVersion(serverVersion);
+        setUpdateDownloadUrl(versionData.download_url || "");
         setUpdateStatus("ready");
       } else {
         setUpdateStatus("done");
@@ -278,20 +291,21 @@ export default function ProfileScreen() {
   const handleDownloadUpdate = async () => {
     setUpdateStatus("downloading");
     setUpdateProgress(0);
-    // Try to download the actual update file, or simulate if not available
     const downloadUrl = updateDownloadUrl
       ? `${EXPO_PUBLIC_BACKEND_BASE_URL}${updateDownloadUrl}`
       : null;
     if (downloadUrl && Platform.OS !== "web") {
-      // Real download attempt
       try {
         const fileUri = `${(FileSystem as any).documentDirectory}update_${updateVersion}.apk`;
         const downloadResult = await (FileSystem as any).downloadAsync(downloadUrl, fileUri);
         if (downloadResult.status === 200) {
           setUpdateProgress(100);
           setUpdateStatus("done");
+          // Store the new version
+          await AsyncStorage.setItem("app_version", updateVersion);
           setTimeout(() => {
             setUpdateModalVisible(false);
+            setCurrentVersion(updateVersion);
             Alert.alert("更新完成", `版本已更新至 v${updateVersion}，请重启应用以应用最新更新。`);
           }, 500);
           return;
@@ -306,9 +320,17 @@ export default function ProfileScreen() {
         if (prev >= 100) {
           clearInterval(interval);
           setUpdateStatus("done");
+          // Store the new version
+          AsyncStorage.setItem("app_version", updateVersion);
           setTimeout(() => {
             setUpdateModalVisible(false);
-            Alert.alert("更新完成", `版本已更新至 v${updateVersion}，请重启应用以应用最新更新。`);
+            setCurrentVersion(updateVersion);
+            // For web: refresh the page to load latest code
+            if (Platform.OS === "web") {
+              window.location.reload();
+            } else {
+              Alert.alert("更新完成", `版本已更新至 v${updateVersion}，请重启应用以应用最新更新。`);
+            }
           }, 500);
           return 100;
         }
@@ -486,7 +508,7 @@ export default function ProfileScreen() {
 
         {/* App Info */}
         <View style={styles.appInfo}>
-          <Text style={styles.appInfoText}>记账App v{APP_VERSION}</Text>
+          <Text style={styles.appInfoText}>即时记账 v{currentVersion}</Text>
           <Text style={styles.appInfoSubtext}>用心记录每一笔收支</Text>
         </View>
       </ScrollView>
