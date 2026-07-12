@@ -360,17 +360,26 @@ router.get('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res
         .eq('user_id', profile.id);
       const permissionStoreIds = (storePerms || []).map((p: any) => p.store_id);
 
+      // Extract username from email (reverse of toSupabaseEmail)
+      const email = userData?.user?.email || '';
+      let username = '';
+      if (email.includes('@jizhangapp.local')) {
+        username = decodeURIComponent(email.replace('@jizhangapp.local', ''));
+      } else {
+        username = email.replace(/@.*$/, '');
+      }
+
       subAccounts.push({
         id: profile.id,
-        email: userData?.user?.email || '',
-        display_name: profile.display_name || profile.displayName || '子账号',
+        username: username,
+        displayName: profile.display_name || profile.displayName || username || '子账号',
         role: profile.role,
-        created_at: profile.created_at || profile.createdAt,
-        permissions: permissionStoreIds,
+        createdAt: profile.created_at || profile.createdAt || new Date().toISOString(),
+        store_ids: permissionStoreIds,
       });
     }
 
-    return res.json({ data: subAccounts });
+    return res.json(subAccounts);
   } catch (error) {
     console.error('List sub-accounts error:', error);
     return res.status(500).json({ error: '获取子账号列表失败' });
