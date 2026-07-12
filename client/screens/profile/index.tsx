@@ -50,12 +50,6 @@ export default function ProfileScreen() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
 
-  // Version update
-  const [updateModalVisible, setUpdateModalVisible] = useState(false);
-  const [updateProgress, setUpdateProgress] = useState(0);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState("");
-
   const fetchAllTimeStats = useCallback(async () => {
     try {
       const [summaryRes, transRes] = await Promise.all([
@@ -76,7 +70,7 @@ export default function ProfileScreen() {
   const fetchPendingCount = useCallback(async () => {
     if (role !== "parent") return;
     try {
-      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/pending`);
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/pending`);
       if (res.ok) {
         const data = await res.json();
         setPendingCount(data.length);
@@ -168,64 +162,6 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleClearCache = () => {
-    Alert.alert("清除缓存", "确定要清除应用缓存吗？", [
-      { text: "取消", style: "cancel" },
-      {
-        text: "确认",
-        onPress: async () => {
-          try {
-            await AsyncStorage.clear();
-            Alert.alert("成功", "缓存已清除");
-          } catch {
-            Alert.alert("错误", "清除缓存失败");
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleCheckUpdate = async () => {
-    setUpdateProgress(0);
-    setUpdateStatus("正在检查新版本...");
-    setIsUpdating(true);
-    setUpdateModalVisible(true);
-
-    try {
-      const res = await fetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/version/check?current=${APP_VERSION}`);
-      const data = await res.json();
-
-      if (!data.has_update) {
-        setUpdateProgress(100);
-        setUpdateStatus(`当前已是最新版本 v${APP_VERSION}`);
-        setIsUpdating(false);
-        return;
-      }
-
-      setUpdateStatus(`发现新版本 v${data.latest_version}，正在下载更新...`);
-
-      // Simulate download progress
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += Math.random() * 15 + 8;
-        if (progress >= 100) {
-          progress = 100;
-          clearInterval(interval);
-          setUpdateStatus(`更新完成！v${data.latest_version} 已就绪`);
-          setIsUpdating(false);
-          // Reload the app to get the latest version
-          if (Platform.OS === "web") {
-            setTimeout(() => window.location.reload(), 1500);
-          }
-        }
-        setUpdateProgress(Math.min(progress, 100));
-      }, 300);
-    } catch {
-      setUpdateStatus("检查更新失败，请稍后重试");
-      setIsUpdating(false);
-    }
-  };
-
   const handleLogout = () => {
     Alert.alert("退出登录", "确定要退出当前账号吗？", [
       { text: "取消", style: "cancel" },
@@ -235,32 +171,6 @@ export default function ProfileScreen() {
         onPress: async () => {
           await signOut();
           router.replace("/login");
-        },
-      },
-    ]);
-  };
-
-  const handleClearData = () => {
-    Alert.alert("确认清除", "确定要清除所有记账数据吗？此操作不可恢复。", [
-      { text: "取消", style: "cancel" },
-      {
-        text: "确认清除",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?size=100`);
-            const data = await res.json();
-            const transactions = data.data || [];
-            for (const t of transactions) {
-              await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/${t.id}`, {
-                method: "DELETE",
-              });
-            }
-            Alert.alert("成功", "所有数据已清除");
-            fetchAllTimeStats();
-          } catch {
-            Alert.alert("错误", "清除数据失败");
-          }
         },
       },
     ]);
@@ -377,14 +287,7 @@ export default function ProfileScreen() {
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionItem} onPress={handleClearData}>
-            <View style={[styles.actionIcon, { backgroundColor: "#FEE2E2" }]}>
-              <FontAwesome6 name="trash" size={16} color="#DC2626" />
-            </View>
-            <Text style={styles.actionText}>清除所有数据</Text>
-            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
-          </TouchableOpacity>
-        </View>
+          </View>
 
         {/* System */}
         <View style={styles.actionsSection}>
@@ -395,22 +298,6 @@ export default function ProfileScreen() {
               <FontAwesome6 name="key" size={16} color="#059669" />
             </View>
             <Text style={styles.actionText}>修改密码</Text>
-            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionItem} onPress={handleClearCache}>
-            <View style={[styles.actionIcon, { backgroundColor: "#F1F5F9" }]}>
-              <FontAwesome6 name="broom" size={16} color="#64748B" />
-            </View>
-            <Text style={styles.actionText}>清除缓存</Text>
-            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionItem} onPress={handleCheckUpdate}>
-            <View style={[styles.actionIcon, { backgroundColor: "#DBEAFE" }]}>
-              <FontAwesome6 name="arrow-rotate-right" size={16} color="#2563EB" />
-            </View>
-            <Text style={styles.actionText}>检查新版本</Text>
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
 
@@ -499,26 +386,7 @@ export default function ProfileScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Update Modal */}
-      <Modal visible={updateModalVisible} transparent animationType="fade">
-        <View style={styles.updateOverlay}>
-          <View style={styles.updateContent}>
-            <FontAwesome6 name="arrow-rotate-right" size={40} color="#2563EB" />
-            <Text style={styles.updateTitle}>系统更新</Text>
-            <Text style={styles.updateStatus}>{updateStatus}</Text>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${updateProgress}%` }]} />
-            </View>
-            <Text style={styles.progressText}>{Math.round(updateProgress)}%</Text>
-            {!isUpdating && updateProgress >= 100 && (
-              <TouchableOpacity style={styles.updateDoneBtn} onPress={() => setUpdateModalVisible(false)}>
-                <Text style={styles.updateDoneBtnText}>完成</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </Modal>
-    </Screen>
+      </Screen>
   );
 }
 
@@ -592,23 +460,4 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontSize: 16, fontWeight: "500", color: "#64748B" },
   submitBtn: { backgroundColor: "#2563EB" },
   submitBtnText: { fontSize: 16, fontWeight: "600", color: "#fff" },
-  // Update modal
-  updateOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
-  updateContent: {
-    backgroundColor: "#fff", borderRadius: 24, padding: 32, width: "80%",
-    alignItems: "center", gap: 12,
-  },
-  updateTitle: { fontSize: 18, fontWeight: "700", color: "#1E293B" },
-  updateStatus: { fontSize: 14, color: "#64748B", textAlign: "center" },
-  progressBarBg: {
-    width: "100%", height: 8, backgroundColor: "#F1F5F9", borderRadius: 4,
-    overflow: "hidden", marginTop: 8,
-  },
-  progressBarFill: { height: "100%", backgroundColor: "#2563EB", borderRadius: 4 },
-  progressText: { fontSize: 14, fontWeight: "600", color: "#2563EB" },
-  updateDoneBtn: {
-    backgroundColor: "#2563EB", paddingHorizontal: 32, paddingVertical: 10,
-    borderRadius: 12, marginTop: 8,
-  },
-  updateDoneBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
 });

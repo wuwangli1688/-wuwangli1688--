@@ -5,7 +5,6 @@ import { LogBox, View, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { Provider } from '@/components/Provider';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
-import UpdateChecker from '@/components/UpdateChecker';
 
 import '../global.css';
 
@@ -69,7 +68,6 @@ export default function RootLayout() {
     <Provider>
       <AuthProvider>
         <StatusBar style="auto" />
-        <UpdateChecker />
         <AuthGate>
           <AuthRedirect />
           <Stack

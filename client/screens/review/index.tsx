@@ -40,7 +40,7 @@ export default function ReviewScreen() {
   const fetchPending = useCallback(async () => {
     try {
       const res = await authFetch(
-        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/pending`
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/pending`
       );
       if (res.ok) {
         const data = await res.json();
@@ -63,8 +63,12 @@ export default function ReviewScreen() {
     setProcessingId(id);
     try {
       const res = await authFetch(
-        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/${id}/approve`,
-        { method: 'POST' }
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/review/${id}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'approve' }),
+        }
       );
       if (res.ok) {
         fetchPending();
@@ -86,8 +90,12 @@ export default function ReviewScreen() {
           setProcessingId(id);
           try {
             const res = await authFetch(
-              `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/${id}/reject`,
-              { method: 'POST' }
+              `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/review/${id}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'reject' }),
+              }
             );
             if (res.ok) {
               fetchPending();
