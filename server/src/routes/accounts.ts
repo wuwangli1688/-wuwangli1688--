@@ -334,8 +334,8 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
     await serviceClient.from('user_profiles').insert({
       id: newUserId,
       role: 'child',
-      parentUserId: parentId,
-      displayName: username,
+      parent_user_id: parentId,
+      display_name: username,
     });
 
     // Grant store permissions if store_ids provided
@@ -444,7 +444,7 @@ router.put('/sub-accounts/:id', requireParent, async (req: AuthenticatedRequest,
     if (displayName !== undefined) {
       await serviceClient
         .from('user_profiles')
-        .update({ displayName })
+        .update({ display_name: displayName })
         .eq('id', id);
     }
 
@@ -639,8 +639,8 @@ router.post('/ensure-profile', async (req: AuthenticatedRequest, res: Response) 
     await serviceClient.from('user_profiles').insert({
       id: userId,
       role: 'parent',
-      parentUserId: null,
-      displayName: null,
+      parent_user_id: null,
+      display_name: null,
     });
 
     return res.status(201).json({ message: 'Profile created', role: 'parent' });
@@ -670,9 +670,9 @@ router.get('/me', async (req: AuthenticatedRequest, res: Response) => {
     return res.json({
       id: userId,
       email: user?.email || '',
-      displayName: profile?.displayName || user?.user_metadata?.display_name || '',
+      displayName: profile?.display_name || user?.user_metadata?.display_name || '',
       role: profile?.role || 'parent',
-      parentUserId: profile?.parentUserId || null,
+      parentUserId: profile?.parent_user_id || null,
     });
   } catch (error) {
     console.error('Get me error:', error);

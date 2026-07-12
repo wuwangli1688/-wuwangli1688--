@@ -318,6 +318,85 @@ router.post('/:id/permissions', requireParent, async (req: AuthenticatedRequest,
   }
 });
 
+// PUT /api/v1/stores/:id/permissions - Batch set which users can access this store (parent only)
+router.put('/:id/permissions', requireParent, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { user_ids } = req.body;
+    if (!Array.isArray(user_ids)) {
+      return res.status(400).json({ error: '请提供用户ID列表' });
+    }
+
+    const client = getSupabaseClient();
+    const ownerId = req.userId!;
+
+    // Verify store ownership
+    const { data: store } = await client
+      .from('stores')
+      .select('id')
+      .eq('id', id)
+      .eq('owner_id', ownerId)
+      .single();
+
+    if (!store) {
+      return res.status(404).json({ error: '店铺不存在或无权操作' });
+    }
+
+    // Remove all existing permissions for this store
+    await client.from('store_permissions').delete().eq('store_id', id);
+
+    // Insert new permissions for selected users
+    if (user_ids.length > 0) {
+      const inserts = user_ids.map((userId: string) => ({
+        store_id: id,
+        user_id: userId,
+        granted_by: ownerId,
+        role: 'viewer',
+      }));
+      const { error } = await client.from('store_permissions').insert(inserts);
+      if (error) throw error;
+    }
+
+    return res.json({ message: '权限已更新' });
+  } catch (error) {
+    console.error('Batch set store permissions error:', error);
+    return res.status(500).json({ error: '更新权限失败' });
+  }
+});
+
+// GET /api/v1/stores/:id/permissions/users - Get users who can access this store (parent only)
+router.get('/:id/permissions/users', requireParent, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const client = getSupabaseClient();
+    const ownerId = req.userId!;
+
+    // Verify store ownership
+    const { data: store } = await client
+      .from('stores')
+      .select('id')
+      .eq('id', id)
+      .eq('owner_id', ownerId)
+      .single();
+
+    if (!store) {
+      return res.status(404).json({ error: '店铺不存在或无权操作' });
+    }
+
+    // Get user_ids from store_permissions
+    const { data: permissions } = await client
+      .from('store_permissions')
+      .select('user_id')
+      .eq('store_id', id);
+
+    const userIds = (permissions || []).map(p => p.user_id);
+    return res.json({ data: userIds });
+  } catch (error) {
+    console.error('Get store permission users error:', error);
+    return res.status(500).json({ error: '获取权限用户失败' });
+  }
+});
+
 // DELETE /api/v1/stores/:storeId/permissions/:userId - Revoke permission (parent only)
 router.delete('/:storeId/permissions/:userId', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {

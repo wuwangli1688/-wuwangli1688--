@@ -31,10 +31,10 @@ interface Store {
 
 interface SubAccount {
   id: string;
-  email: string;
-  display_name: string;
+  username: string;
+  displayName: string;
   role: string;
-  permissions: string[]; // store IDs
+  store_ids: string[];
 }
 
 export default function StoresScreen() {
@@ -53,6 +53,8 @@ export default function StoresScreen() {
   const [storeName, setStoreName] = useState("");
   const [storeNotes, setStoreNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [selectedSubIds, setSelectedSubIds] = useState<string[]>([]);
+  const [loadingPerms, setLoadingPerms] = useState(false);
 
   // Permission modal
   const [permModalVisible, setPermModalVisible] = useState(false);
@@ -74,7 +76,7 @@ export default function StoresScreen() {
     try {
       const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/sub-accounts`);
       const data = await res.json();
-      setSubAccounts(data.data || []);
+      setSubAccounts(Array.isArray(data) ? data : data.data || []);
     } catch (err) {
       console.error("Failed to fetch sub accounts:", err);
     }
@@ -91,13 +93,34 @@ export default function StoresScreen() {
     setEditingStore(null);
     setStoreName("");
     setStoreNotes("");
+    setSelectedSubIds([]);
     setStoreModalVisible(true);
   };
 
-  const handleEditStore = (store: Store) => {
+  const handleEditStore = async (store: Store) => {
     setEditingStore(store);
     setStoreName(store.name);
     setStoreNotes(store.notes || "");
+    setSelectedSubIds([]);
+    // Load existing permissions for this store
+    if (isParent) {
+      setLoadingPerms(true);
+      try {
+        const res = await authFetch(
+          `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores/${store.id}/permissions`
+        );
+        if (res.ok) {
+          const perms = await res.json();
+          const permData = perms.data || [];
+          const ids = permData.map((p: any) => p.user_id || p.userId).filter(Boolean);
+          setSelectedSubIds(ids);
+        }
+      } catch (err) {
+        // silently fail
+      } finally {
+        setLoadingPerms(false);
+      }
+    }
     setStoreModalVisible(true);
   };
 
@@ -109,6 +132,7 @@ export default function StoresScreen() {
 
     setSaving(true);
     try {
+      let storeId = editingStore?.id;
       if (editingStore) {
         /**
          * 服务端文件：server/src/routes/stores.ts
@@ -135,16 +159,37 @@ export default function StoresScreen() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: storeName.trim(), notes: storeNotes.trim() || null }),
         });
+        const result = await res.json();
         if (!res.ok) throw new Error("创建失败");
+        storeId = result.data?.id;
+      }
+
+      // Update sub-account permissions for this store (parent only)
+      if (isParent && storeId && subAccounts.length > 0) {
+        await authFetch(
+          `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores/${storeId}/permissions`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_ids: selectedSubIds }),
+          }
+        );
       }
 
       setStoreModalVisible(false);
       fetchStores();
+      Alert.alert("成功", editingStore ? "店铺已更新" : "店铺已创建");
     } catch (err) {
       Alert.alert("错误", err instanceof Error ? err.message : "操作失败");
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleSubAccount = (subId: string) => {
+    setSelectedSubIds((prev) =>
+      prev.includes(subId) ? prev.filter((id) => id !== subId) : [...prev, subId]
+    );
   };
 
   const handleDeleteStore = (store: Store) => {
@@ -176,7 +221,7 @@ export default function StoresScreen() {
 
   const handleManagePermission = (account: SubAccount) => {
     setSelectedAccount(account);
-    setSelectedStoreIds(account.permissions || []);
+    setSelectedStoreIds(account.store_ids || []);
     setPermModalVisible(true);
   };
 
@@ -285,12 +330,12 @@ export default function StoresScreen() {
                       <FontAwesome6 name="user" size={18} color="#6366F1" />
                     </View>
                     <View style={styles.accountInfo}>
-                      <Text style={styles.accountName}>{account.display_name}</Text>
-                      <Text style={styles.accountEmail}>{account.email}</Text>
+                      <Text style={styles.accountName}>{account.displayName || account.username}</Text>
+                      <Text style={styles.accountEmail}>{account.username}</Text>
                     </View>
                     <View style={styles.permBadge}>
                       <Text style={styles.permBadgeText}>
-                        {account.permissions?.length || 0} 个店铺
+                        {account.store_ids?.length || 0} 个店铺
                       </Text>
                     </View>
                     <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
@@ -339,6 +384,48 @@ export default function StoresScreen() {
                       maxLength={200}
                       multiline
                     />
+
+                    {/* Sub-account association (parent only) */}
+                    {isParent && subAccounts.length > 0 && (
+                      <>
+                        <Text style={[styles.inputLabel, { marginTop: 16 }]}>关联子账号</Text>
+                        <Text style={{ fontSize: 12, color: "#94A3B8", marginBottom: 8 }}>
+                          选择可以查看此店铺数据的子账号（可多选）
+                        </Text>
+                        {loadingPerms ? (
+                          <Text style={{ color: "#6B7280", paddingVertical: 8 }}>加载中...</Text>
+                        ) : (
+                          subAccounts.map((sub) => {
+                            const isSelected = selectedSubIds.includes(sub.id);
+                            return (
+                              <TouchableOpacity
+                                key={sub.id}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  paddingVertical: 10,
+                                  paddingHorizontal: 12,
+                                  backgroundColor: isSelected ? "#EEF2FF" : "#F9FAFB",
+                                  borderRadius: 8,
+                                  marginBottom: 6,
+                                }}
+                                onPress={() => toggleSubAccount(sub.id)}
+                              >
+                                <FontAwesome6
+                                  name={isSelected ? "check-square" : "square"}
+                                  size={18}
+                                  color={isSelected ? "#4F46E5" : "#9CA3AF"}
+                                  style={{ marginRight: 10 }}
+                                />
+                                <Text style={{ fontSize: 14, color: "#374151" }}>
+                                  {sub.displayName || sub.username || "子账号"}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })
+                        )}
+                      </>
+                    )}
                   </ScrollView>
 
                   <View style={styles.modalFooter}>
@@ -381,7 +468,7 @@ export default function StoresScreen() {
 
                 <View style={styles.modalBody}>
                   <Text style={styles.permSubtitle}>
-                    {selectedAccount?.display_name} 可查看以下店铺的数据：
+                    {selectedAccount?.displayName} 可查看以下店铺的数据：
                   </Text>
                   {stores.length === 0 ? (
                     <Text style={styles.emptyHint}>暂无店铺可分配</Text>
