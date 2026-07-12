@@ -289,7 +289,7 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     // Also update user_profiles table
     await client.from('user_profiles').upsert({
       id: userId,
-      displayName: displayName.trim(),
+      display_name: displayName.trim(),
     }, { onConflict: 'id' });
 
     return res.json({ message: '更新成功', displayName: displayName.trim() });

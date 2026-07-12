@@ -35,7 +35,14 @@ interface Summary {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, role, email, signOut } = useAuth();
+  const { user, role, email, signOut, refreshProfile } = useAuth();
+
+// Derive account name from email
+const accountName = email
+  ? (email.endsWith('@jizhangapp.local')
+    ? decodeURIComponent(email.replace('@jizhangapp.local', ''))
+    : email.split('@')[0])
+  : '';
   const router = useSafeRouter();
   const [summary, setSummary] = useState<Summary>({ total_income: "0.00", total_expense: "0.00", balance: "0.00" });
 
@@ -60,6 +67,12 @@ function compareVersions(a: string, b: string): number {
   const [updateVersion, setUpdateVersion] = useState("");
   const [currentVersion, setCurrentVersion] = useState("1.0.1");
   const [updateDownloadUrl, setUpdateDownloadUrl] = useState("");
+
+  // Store switching
+  const [stores, setStores] = useState<any[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const [storeSelectorVisible, setStoreSelectorVisible] = useState(false);
+  const [loadingStores, setLoadingStores] = useState(false);
 
   // Load stored version from AsyncStorage on mount
   useEffect(() => {
@@ -116,12 +129,46 @@ function compareVersions(a: string, b: string): number {
     }
   }, [role]);
 
+  const fetchStores = useCallback(async () => {
+    setLoadingStores(true);
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores`);
+      if (res.ok) {
+        const data = await res.json();
+        setStores(data.data || []);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingStores(false);
+    }
+  }, []);
+
+  // Load selected store from AsyncStorage
+  useEffect(() => {
+    (async () => {
+      const stored = await AsyncStorage.getItem("selected_store_id");
+      setSelectedStoreId(stored);
+    })();
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       fetchAllTimeStats();
       fetchPendingCount();
-    }, [fetchAllTimeStats, fetchPendingCount])
+      fetchStores();
+    }, [fetchAllTimeStats, fetchPendingCount, fetchStores])
   );
+
+  const handleSelectStore = async (storeId: string | null) => {
+    setSelectedStoreId(storeId);
+    if (storeId) {
+      await AsyncStorage.setItem("selected_store_id", storeId);
+    } else {
+      await AsyncStorage.removeItem("selected_store_id");
+    }
+    setStoreSelectorVisible(false);
+  };
 
   const handleExport = useCallback(async () => {
     if (exporting) return;
@@ -232,6 +279,7 @@ function compareVersions(a: string, b: string): number {
       if (res.ok) {
         Alert.alert("成功", "显示名称已更新");
         setDisplayNameModalVisible(false);
+        await refreshProfile();
       } else {
         const err = await res.json();
         Alert.alert("错误", err.error || "更新失败");
@@ -394,7 +442,7 @@ function compareVersions(a: string, b: string): number {
               {role === "parent" ? "主账号" : "子账号"}
             </Text>
           </View>
-          <Text style={styles.profileDesc}>{email}</Text>
+          <Text style={styles.profileDesc}>登录账号：{accountName}</Text>
         </View>
 
         {/* Stats Grid */}
@@ -408,6 +456,29 @@ function compareVersions(a: string, b: string): number {
               <Text style={[styles.statValue, { color: item.color }]}>{item.value}</Text>
             </View>
           ))}
+        </View>
+
+        {/* Store Switcher */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.actionsTitle}>当前店铺</Text>
+          <TouchableOpacity style={styles.actionItem} onPress={() => setStoreSelectorVisible(true)}>
+            <View style={[styles.actionIcon, { backgroundColor: "#E0F2FE" }]}>
+              <FontAwesome6 name="store" size={16} color="#0284C7" />
+            </View>
+            {selectedStoreId ? (
+              <Text style={styles.actionText}>
+                {stores.find(s => s.id === selectedStoreId)?.name || '已选择店铺'}
+              </Text>
+            ) : (
+              <Text style={styles.actionText}>全部店铺（不筛选）</Text>
+            )}
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+          {loadingStores && (
+            <Text style={{ fontSize: 12, color: "#94A3B8", marginTop: 4, marginLeft: 4 }}>
+              加载中...
+            </Text>
+          )}
         </View>
 
         {/* Account Management (parent only) */}
@@ -549,7 +620,7 @@ function compareVersions(a: string, b: string): number {
                     <FontAwesome6 name="xmark" size={20} color="#64748B" />
                   </TouchableOpacity>
                 </View>
-                <View style={styles.modalBody}>
+                <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>显示名称</Text>
                     <TextInput
@@ -561,7 +632,7 @@ function compareVersions(a: string, b: string): number {
                       maxLength={30}
                     />
                   </View>
-                </View>
+                </ScrollView>
                 <View style={styles.modalFooter}>
                   <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setDisplayNameModalVisible(false)}>
                     <Text style={styles.cancelBtnText}>取消</Text>
@@ -578,6 +649,54 @@ function compareVersions(a: string, b: string): number {
                     )}
                   </TouchableOpacity>
                 </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Store Selector Modal */}
+      <Modal visible={storeSelectorVisible} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} disabled={Platform.OS === "web"}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>选择店铺</Text>
+                  <TouchableOpacity onPress={() => setStoreSelectorVisible(false)}>
+                    <FontAwesome6 name="xmark" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                  <TouchableOpacity
+                    style={[styles.storeOption, !selectedStoreId && styles.storeOptionActive]}
+                    onPress={() => handleSelectStore(null)}
+                  >
+                    <FontAwesome6 name="store" size={18} color={!selectedStoreId ? "#2563EB" : "#64748B"} />
+                    <Text style={[styles.storeOptionText, !selectedStoreId && styles.storeOptionTextActive]}>
+                      全部店铺（不筛选）
+                    </Text>
+                    {!selectedStoreId && <FontAwesome6 name="check" size={16} color="#2563EB" />}
+                  </TouchableOpacity>
+                  {stores.map((store) => (
+                    <TouchableOpacity
+                      key={store.id}
+                      style={[styles.storeOption, selectedStoreId === store.id && styles.storeOptionActive]}
+                      onPress={() => handleSelectStore(store.id)}
+                    >
+                      <FontAwesome6 name="store" size={18} color={selectedStoreId === store.id ? "#2563EB" : "#64748B"} />
+                      <Text style={[styles.storeOptionText, selectedStoreId === store.id && styles.storeOptionTextActive]}>
+                        {store.name}
+                      </Text>
+                      {selectedStoreId === store.id && <FontAwesome6 name="check" size={16} color="#2563EB" />}
+                    </TouchableOpacity>
+                  ))}
+                  {stores.length === 0 && (
+                    <Text style={{ textAlign: "center", color: "#94A3B8", paddingVertical: 24 }}>
+                      暂无店铺，请先创建店铺
+                    </Text>
+                  )}
+                </ScrollView>
               </View>
             </View>
           </KeyboardAvoidingView>
@@ -799,5 +918,19 @@ const styles = StyleSheet.create({
   updateBtn: {
     paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12,
     alignItems: "center", justifyContent: "center",
+  },
+  storeOption: {
+    flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 16,
+    borderRadius: 12, marginBottom: 8, gap: 12,
+    backgroundColor: "#F8FAFC",
+  },
+  storeOptionActive: {
+    backgroundColor: "#EFF6FF",
+  },
+  storeOptionText: {
+    flex: 1, fontSize: 15, color: "#334155",
+  },
+  storeOptionTextActive: {
+    color: "#2563EB", fontWeight: "600",
   },
 });

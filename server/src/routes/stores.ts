@@ -20,17 +20,36 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
     const role = req.userRole!;
     const parentUserId = req.parentUserId;
 
-    // Determine the effective owner: parent accounts use their own ID,
-    // child accounts use their parent's ID
-    const ownerId = role === 'parent' ? userId : parentUserId!;
+    let stores: any[];
 
-    const { data: stores, error } = await client
-      .from('stores')
-      .select('id, name, notes, owner_id, created_at')
-      .eq('owner_id', ownerId)
-      .order('created_at', { ascending: true });
-
-    if (error) throw error;
+    if (role === 'parent') {
+      // Parent: all stores they own
+      const ownerId = userId;
+      const { data, error } = await client
+        .from('stores')
+        .select('id, name, notes, owner_id, created_at')
+        .eq('owner_id', ownerId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      stores = data || [];
+    } else {
+      // Child: only stores they have permission to
+      const { data: permissions } = await client
+        .from('store_permissions')
+        .select('store_id')
+        .eq('user_id', userId);
+      const storeIds = (permissions || []).map(p => p.store_id);
+      if (storeIds.length === 0) {
+        return res.json({ data: [] });
+      }
+      const { data, error } = await client
+        .from('stores')
+        .select('id, name, notes, owner_id, created_at')
+        .in('id', storeIds)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      stores = data || [];
+    }
 
     // For each store, get permission count
     const storesWithCounts = await Promise.all(
