@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
 import { authFetch } from "@/lib/supabase";
+import { useSafeRouter } from "@/hooks/useSafeRouter";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -39,6 +40,7 @@ interface SubAccount {
 
 export default function StoresScreen() {
   const insets = useSafeAreaInsets();
+  const router = useSafeRouter();
   const { user } = useAuth();
   const isParent = user?.role === "parent";
   const isChild = user?.role === "child";
@@ -290,15 +292,28 @@ export default function StoresScreen() {
               ) : (
                 stores.map((store) => (
                   <View key={store.id} style={styles.storeCard}>
-                    <View style={styles.storeIconContainer}>
-                      <FontAwesome6 name="store" size={18} color="#0284C7" />
-                    </View>
-                    <View style={styles.storeInfo}>
-                      <Text style={styles.storeName}>{store.name}</Text>
-                      {store.notes ? (
-                        <Text style={styles.storeNotes} numberOfLines={1}>{store.notes}</Text>
-                      ) : null}
-                    </View>
+                    <TouchableOpacity
+                      style={styles.storeMainContent}
+                      onPress={() =>
+                        router.push("/store-detail", {
+                          id: store.id,
+                          name: store.name,
+                          notes: store.notes || "",
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.storeIconContainer}>
+                        <FontAwesome6 name="store" size={18} color="#0284C7" />
+                      </View>
+                      <View style={styles.storeInfo}>
+                        <Text style={styles.storeName}>{store.name}</Text>
+                        {store.notes ? (
+                          <Text style={styles.storeNotes} numberOfLines={1}>{store.notes}</Text>
+                        ) : null}
+                      </View>
+                      <FontAwesome6 name="chevron-right" size={12} color="#CBD5E1" style={{ marginRight: 4 }} />
+                    </TouchableOpacity>
                     <View style={styles.storeActions}>
                         <TouchableOpacity
                           style={styles.actionBtn}
@@ -604,6 +619,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderWidth: 1,
     borderColor: "#E2E8F0",
+  },
+  storeMainContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
   },
   storeIconContainer: {
     width: 40,

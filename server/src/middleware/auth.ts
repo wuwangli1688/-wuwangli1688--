@@ -33,11 +33,32 @@ export async function authMiddleware(
     }
 
     // Get user profile from our custom table
-    const { data: profile } = await getSupabaseClient()
+    const serviceClient = getSupabaseClient();
+    let { data: profile } = await serviceClient
       .from('user_profiles')
       .select('role, parent_user_id')
       .eq('id', user.id)
       .single();
+
+    // Auto-create profile if it doesn't exist (handles cases where ensure-profile failed)
+    if (!profile) {
+      console.log(`[Auth] Auto-creating profile for user ${user.id}`);
+      const { error: insertError } = await serviceClient
+        .from('user_profiles')
+        .insert({
+          id: user.id,
+          role: 'parent',
+          parent_user_id: null,
+          display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || '用户',
+        });
+
+      if (insertError) {
+        console.error('[Auth] Failed to auto-create profile:', insertError);
+      } else {
+        profile = { role: 'parent', parent_user_id: null };
+        console.log(`[Auth] Profile auto-created for user ${user.id}`);
+      }
+    }
 
     req.userId = user.id;
     req.userRole = profile?.role ?? 'parent';
