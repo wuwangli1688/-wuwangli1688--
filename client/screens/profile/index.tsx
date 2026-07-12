@@ -65,7 +65,7 @@ function compareVersions(a: string, b: string): number {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<"checking" | "ready" | "downloading" | "done">("checking");
   const [updateVersion, setUpdateVersion] = useState("");
-  const [currentVersion, setCurrentVersion] = useState("1.0.1");
+  const [currentVersion, setCurrentVersion] = useState("1.0.2");
   const [updateDownloadUrl, setUpdateDownloadUrl] = useState("");
 
   // Store switching
@@ -82,7 +82,7 @@ function compareVersions(a: string, b: string): number {
         setCurrentVersion(stored);
       } else {
         // First run - store default version
-        await AsyncStorage.setItem("app_version", "1.0.1");
+        await AsyncStorage.setItem("app_version", "1.0.2");
       }
     })();
   }, []);
@@ -340,7 +340,7 @@ function compareVersions(a: string, b: string): number {
       // 获取本地存储的版本号
       const storedVersion = await AsyncStorage.getItem("app_version");
       // 如果服务器版本比本地存储的版本新，则提示更新
-      if (compareVersions(serverVersion, storedVersion || "1.0.1") > 0) {
+      if (compareVersions(serverVersion, storedVersion || "1.0.2") > 0) {
         setUpdateVersion(serverVersion);
         setUpdateDownloadUrl(versionData.download_url || "");
         setUpdateStatus("ready");

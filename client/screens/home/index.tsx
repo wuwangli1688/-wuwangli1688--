@@ -1,346 +1,417 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   FlatList,
+  Alert,
   ActivityIndicator,
   RefreshControl,
   Modal,
   Platform,
-  Alert,
+  KeyboardAvoidingView,
   ScrollView,
+  TextInput,
+  Dimensions,
 } from "react-native";
 import { Screen } from "@/components/Screen";
-import { FontAwesome6 } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
-import { authFetch } from "@/lib/supabase";
+import { FontAwesome6 } from "@expo/vector-icons";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSafeRouter } from "@/hooks/useSafeRouter";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import { authFetch } from "@/lib/supabase";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
-interface Transaction {
-  id: string;
-  amount: number;
-  type: "income" | "expense";
-  category_id: number;
-  note: string | null;
-  project: string | null;
-  date: string;
-  status?: string;
-  categories?: { name: string; icon: string; color: string } | null;
-}
+const monthLabels = [
+  "一月", "二月", "三月", "四月", "五月", "六月",
+  "七月", "八月", "九月", "十月", "十一月", "十二月",
+];
 
-interface MonthData {
-  year: number;
-  month: number;
-  carryForward: number;
-  transactions: (Transaction & { runningBalance: number; serialNo: number })[];
-  totalIncome: number;
-  totalExpense: number;
-  endBalance: number;
-}
-
-const iconMap: Record<string, string> = {
-  restaurant: "utensils",
-  car: "car",
-  "shopping-bag": "bag-shopping",
-  film: "film",
-  heart: "heart",
-  book: "book",
-  home: "house",
-  phone: "phone",
-  "more-horizontal": "ellipsis",
-  briefcase: "briefcase",
-  award: "award",
-  "trending-up": "arrow-trend-up",
-  clock: "clock",
-  "plus-circle": "circle-plus",
-  circle: "circle",
+const COLORS = {
+  bg: "#FDFCF9",
+  tableBg: "#FFFFFF",
+  border: "#E8E4DB",
+  headerBg: "#F7F5F0",
+  headerText: "#5C4F3C",
+  text: "#2D2420",
+  textSecondary: "#8B7E6E",
+  income: "#0F7B4E",
+  incomeBg: "#ECFDF5",
+  expense: "#C2410C",
+  expenseBg: "#FFF7ED",
+  balance: "#1E3A5F",
+  carryForwardBg: "#F9F7F2",
+  footerBg: "#F7F5F0",
+  primary: "#2563EB",
+  primaryLight: "#EFF6FF",
 };
 
+function formatAmount(amount: number, isIncome: boolean) {
+  if (!amount || amount === 0) return null;
+  const abs = Math.abs(amount).toFixed(2);
+  const [int, dec] = abs.split(".");
+  return { int, dec, isIncome };
+}
+
+function AmountCell({
+  amount,
+  isIncome,
+}: {
+  amount: number;
+  isIncome: boolean;
+}) {
+  const fmt = formatAmount(amount, isIncome);
+  if (!fmt) {
+    return <Text style={styles.emptyCell}>-</Text>;
+  }
+  return (
+    <Text
+      style={isIncome ? styles.incomeAmount : styles.expenseAmount}
+    >
+      {isIncome ? "+" : "-"}
+      {fmt.int}
+      <Text
+        style={isIncome ? styles.amountDecimal : styles.amountDecimal}
+      >
+        .{fmt.dec}
+      </Text>
+    </Text>
+  );
+}
+
 export default function HomeScreen() {
-  const [monthData, setMonthData] = useState<MonthData | null>(null);
+  const router = useSafeRouter();
+  const { user, email, role } = useAuth();
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
+  const [monthData, setMonthData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const nowRef = useRef(new Date());
-  const [viewYear, setViewYear] = useState(nowRef.current.getFullYear());
-  const [viewMonth, setViewMonth] = useState(nowRef.current.getMonth() + 1);
-  
+
   // Store filter state
-  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [stores, setStores] = useState<any[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const [selectedStoreName, setSelectedStoreName] = useState("全部店铺");
   const [storeModalVisible, setStoreModalVisible] = useState(false);
-  
+
   // Export state
   const [exportModalVisible, setExportModalVisible] = useState(false);
-  const [exportTimeRange, setExportTimeRange] = useState<'current' | 'last' | 'custom' | 'all'>('current');
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  const fetchMonthData = useCallback(async (year: number, month: number) => {
-    setError(null);
+  // Load stores
+  const loadStores = useCallback(async () => {
     try {
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const lastDay = new Date(year, month, 0).getDate();
-      const monthStart = `${year}-${pad(month)}-01`;
-      const monthEnd = `${year}-${pad(month)}-${pad(lastDay)}`;
-
-      // 1. Fetch this month's transactions (date ASC for running balance)
-      let txUrl = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?start_date=${monthStart}&end_date=${monthEnd}&size=200&order=date.asc`;
-      if (selectedStoreId) {
-        txUrl += `&store_id=${selectedStoreId}`;
-      }
-      const txRes = await authFetch(txUrl);
-      if (!txRes.ok) throw new Error("加载交易记录失败");
-      const txData = await txRes.json();
-      const transactions: Transaction[] = txData.data || [];
-
-      // 2. Calculate carry-forward balance (all before this month)
-      const prevMonthEnd = `${year}-${pad(month - 1 === 0 ? 12 : month - 1)}-${pad(
-        new Date(year, month - 1, 0).getDate()
-      )}`;
-      let summaryUrl = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/summary?end_date=${prevMonthEnd}`;
-      if (selectedStoreId) {
-        summaryUrl += `&store_id=${selectedStoreId}`;
-      }
-      const summaryRes = await authFetch(summaryUrl);
-      let carryForward = 0;
-      if (summaryRes.ok) {
-        const summaryData = await summaryRes.json();
-        carryForward = parseFloat(summaryData.data?.balance || "0");
-      }
-
-      // 3. Calculate running balance
-      let running = carryForward;
-      let totalIncome = 0;
-      let totalExpense = 0;
-      const enriched = transactions.map((t, i) => {
-        const amt = parseFloat(String(t.amount));
-        if (t.type === "income") {
-          running += amt;
-          totalIncome += amt;
-        } else {
-          running -= amt;
-          totalExpense += amt;
+      // authFetch is already imported at top
+      const res = await authFetch(
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const storeList = data.data || [];
+        setStores(storeList);
+        // Read saved store ID from AsyncStorage
+        const savedId = await AsyncStorage.getItem("selected_store_id");
+        if (savedId) {
+          const found = storeList.find((s: any) => s.id === savedId);
+          if (found) {
+            setSelectedStoreId(savedId);
+            setSelectedStoreName(found.name);
+          }
         }
-        return {
-          ...t,
-          amount: amt,
-          runningBalance: Math.round(running * 100) / 100,
-          serialNo: i + 1,
-        };
-      });
-
-      setMonthData({
-        year,
-        month,
-        carryForward,
-        transactions: enriched,
-        totalIncome,
-        totalExpense,
-        endBalance: Math.round(running * 100) / 100,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "加载失败";
-      setError(message);
+      }
+    } catch (e) {
+      // silently fail - store filter is optional
     }
-  }, [viewYear, viewMonth, selectedStoreId]);
+  }, []);
+
+  useEffect(() => {
+    loadStores();
+  }, [loadStores]);
+
+  const fetchMonthData = useCallback(
+    async (year: number, month: number) => {
+      try {
+        setLoading(true);
+        setError(null);
+        // authFetch is already imported at top
+
+        const params = new URLSearchParams({
+          year: year.toString(),
+          month: month.toString(),
+        });
+        if (selectedStoreId) {
+          params.append("store_id", selectedStoreId);
+        }
+
+        const res = await authFetch(
+          `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions?${params}`
+        );
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || "获取数据失败");
+        }
+        const data = await res.json();
+        setMonthData(data);
+      } catch (e: any) {
+        setError(e.message || "网络错误");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [selectedStoreId]
+  );
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      fetchMonthData(viewYear, viewMonth).finally(() => setLoading(false));
+      fetchMonthData(viewYear, viewMonth);
     }, [viewYear, viewMonth, fetchMonthData])
   );
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await fetchMonthData(viewYear, viewMonth);
-    setRefreshing(false);
-  }, [viewYear, viewMonth, fetchMonthData]);
 
   const changeMonth = (delta: number) => {
     let newMonth = viewMonth + delta;
     let newYear = viewYear;
     if (newMonth > 12) {
       newMonth = 1;
-      newYear++;
+      newYear += 1;
     } else if (newMonth < 1) {
       newMonth = 12;
-      newYear--;
+      newYear -= 1;
     }
     setViewYear(newYear);
     setViewMonth(newMonth);
   };
 
-  const formatCurrency = (val: number) => {
-    const fixed = val.toFixed(2);
-    const [intPart, decPart] = fixed.split(".");
-    const formatted = Number(intPart).toLocaleString("en-US");
-    return { int: formatted, dec: decPart };
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchMonthData(viewYear, viewMonth);
   };
 
-  const monthLabels = [
-    "一月", "二月", "三月", "四月", "五月", "六月",
-    "七月", "八月", "九月", "十月", "十一月", "十二月",
-  ];
+  const handleStoreSelect = (store: any) => {
+    if (store === null) {
+      setSelectedStoreId(null);
+      setSelectedStoreName("全部店铺");
+      AsyncStorage.removeItem("selected_store_id");
+    } else {
+      setSelectedStoreId(store.id);
+      setSelectedStoreName(store.name);
+      AsyncStorage.setItem("selected_store_id", store.id);
+    }
+    setStoreModalVisible(false);
+  };
+
+  // Export handler
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      // authFetch is already imported at top
+
+      const params = new URLSearchParams();
+      if (exportStartDate) params.append("start_date", exportStartDate);
+      if (exportEndDate) params.append("end_date", exportEndDate);
+      if (selectedStoreId) params.append("store_id", selectedStoreId);
+
+      const res = await authFetch(
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/export?${params}`
+      );
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "导出失败");
+      }
+
+      const csvText = await res.text();
+      const filename = `记账导出_${exportStartDate || "全部"}_${exportEndDate || "全部"}.csv`;
+      const fs = FileSystem as any;
+      const filePath = `${fs.cacheDirectory}${filename}`;
+      await fs.writeAsStringAsync(filePath, csvText, {
+        encoding: fs.EncodingType.UTF8,
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(filePath, {
+          mimeType: "text/csv",
+          dialogTitle: "导出记账数据",
+        });
+      } else {
+        Alert.alert("成功", `数据已导出到: ${filePath}`);
+      }
+
+      setExportModalVisible(false);
+    } catch (e: any) {
+      Alert.alert("导出失败", e.message || "网络错误");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const openExportModal = (preset?: string) => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+
+    if (preset === "thisMonth") {
+      const start = `${y}-${String(m).padStart(2, "0")}-01`;
+      const lastDay = new Date(y, m, 0).getDate();
+      const end = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      setExportStartDate(start);
+      setExportEndDate(end);
+      setExportModalVisible(true);
+    } else if (preset === "lastMonth") {
+      const lastM = m === 1 ? 12 : m - 1;
+      const lastY = m === 1 ? y - 1 : y;
+      const start = `${lastY}-${String(lastM).padStart(2, "0")}-01`;
+      const lastDay = new Date(lastY, lastM, 0).getDate();
+      const end = `${lastY}-${String(lastM).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      setExportStartDate(start);
+      setExportEndDate(end);
+      setExportModalVisible(true);
+    } else if (preset === "all") {
+      setExportStartDate("");
+      setExportEndDate("");
+      setExportModalVisible(true);
+    } else {
+      setExportStartDate(`${y}-${String(m).padStart(2, "0")}-01`);
+      const lastDay = new Date(y, m, 0).getDate();
+      setExportEndDate(`${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`);
+      setExportModalVisible(true);
+    }
+  };
+
+  // Transaction rendering
+  const renderTransaction = ({ item, index }: { item: any; index: number }) => (
+    <TouchableOpacity
+      style={styles.txRow}
+      activeOpacity={0.7}
+      onPress={() => router.push("/detail", { id: item.id })}
+    >
+      <View style={[styles.colSerial, styles.colCenter]}>
+        <Text style={styles.serialText}>{index + 1}</Text>
+      </View>
+      <View style={[styles.colDate, styles.colCenter]}>
+        <Text style={styles.dateText}>
+          {item.date ? item.date.substring(5) : "-"}
+        </Text>
+      </View>
+      <View style={styles.colItem}>
+        <View style={styles.itemRow}>
+          <View
+            style={[
+              styles.catIconWrap,
+              { backgroundColor: `${item.category_color || "#8B7E6E"}20` },
+            ]}
+          >
+            <FontAwesome6
+              name={item.category_icon || "circle"}
+              size={12}
+              color={item.category_color || "#8B7E6E"}
+            />
+          </View>
+          <View style={styles.itemTextWrap}>
+            <Text style={styles.itemTitle} numberOfLines={1}>
+              {item.category_name || "未分类"}
+            </Text>
+            {item.notes && (
+              <Text style={styles.itemNote} numberOfLines={1}>
+                {item.notes}
+              </Text>
+            )}
+          </View>
+        </View>
+      </View>
+      <View style={[styles.colAmount, styles.colRight]}>
+        {item.is_income ? (
+          <AmountCell amount={item.amount} isIncome={true} />
+        ) : (
+          <Text style={styles.emptyCell}>-</Text>
+        )}
+      </View>
+      <View style={[styles.colAmount, styles.colRight]}>
+        {!item.is_income ? (
+          <AmountCell amount={item.amount} isIncome={false} />
+        ) : (
+          <Text style={styles.emptyCell}>-</Text>
+        )}
+      </View>
+      <View style={[styles.colBalance, styles.colRight]}>
+        {item.balance !== undefined && item.balance !== null ? (
+          <Text style={styles.balanceAmount}>
+            {item.balance >= 0 ? "+" : ""}
+            {item.balance.toFixed(2)}
+          </Text>
+        ) : (
+          <Text style={styles.emptyCell}>-</Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
 
   const renderTableHeader = () => (
     <View style={styles.tableHeader}>
-      <View style={[styles.colSerial, styles.colCenter]}>
-        <Text style={styles.headerText}>序号</Text>
-      </View>
-      <View style={styles.colDate}>
-        <Text style={styles.headerText}>日期</Text>
-      </View>
-      <View style={styles.colItem}>
-        <Text style={styles.headerText}>项目</Text>
-      </View>
-      <View style={[styles.colAmount, styles.colRight]}>
-        <Text style={[styles.headerText, styles.incomeHeader]}>收入</Text>
-      </View>
-      <View style={[styles.colAmount, styles.colRight]}>
-        <Text style={[styles.headerText, styles.expenseHeader]}>支出</Text>
-      </View>
-      <View style={[styles.colBalance, styles.colRight]}>
-        <Text style={styles.headerText}>余额</Text>
-      </View>
+      <Text style={[styles.headerText, styles.colSerial, styles.colCenter]}>
+        序号
+      </Text>
+      <Text style={[styles.headerText, styles.colDate, styles.colCenter]}>
+        日期
+      </Text>
+      <Text style={[styles.headerText, styles.colItem]}>项目</Text>
+      <Text
+        style={[
+          styles.headerText,
+          styles.colAmount,
+          styles.colRight,
+          styles.incomeHeader,
+        ]}
+      >
+        收入
+      </Text>
+      <Text
+        style={[
+          styles.headerText,
+          styles.colAmount,
+          styles.colRight,
+          styles.expenseHeader,
+        ]}
+      >
+        支出
+      </Text>
+      <Text style={[styles.headerText, styles.colBalance, styles.colRight]}>
+        余额
+      </Text>
     </View>
   );
 
   const renderCarryForward = () => {
-    if (!monthData) return null;
-    const cf = formatCurrency(monthData.carryForward);
+    if (!monthData?.carry_forward) return null;
     return (
       <View style={styles.carryForwardRow}>
-        <View style={[styles.colSerial, styles.colCenter]}>
-          <Text style={styles.cfText}>-</Text>
-        </View>
-        <View style={styles.colDate}>
-          <Text style={styles.cfText}>-</Text>
-        </View>
-        <View style={styles.colItem}>
-          <Text style={styles.cfLabel}>上月结余</Text>
-        </View>
-        <View style={[styles.colAmount, styles.colRight]}>
-          <Text style={styles.cfText}>-</Text>
-        </View>
-        <View style={[styles.colAmount, styles.colRight]}>
-          <Text style={styles.cfText}>-</Text>
-        </View>
+        <Text style={[styles.cfLabel, styles.colSerial, styles.colCenter]}>
+          -
+        </Text>
+        <Text style={[styles.cfText, styles.colDate, styles.colCenter]}>
+          -
+        </Text>
+        <Text style={[styles.cfLabel, styles.colItem]}>上月结余</Text>
+        <Text style={[styles.colAmount, styles.colRight]}>
+          <Text style={styles.emptyCell}>-</Text>
+        </Text>
+        <Text style={[styles.colAmount, styles.colRight]}>
+          <Text style={styles.emptyCell}>-</Text>
+        </Text>
         <View style={[styles.colBalance, styles.colRight]}>
           <Text style={styles.cfAmount}>
-            <Text style={styles.cfSymbol}>¥</Text>
-            {cf.int}
-            <Text style={styles.cfDecimal}>.{cf.dec}</Text>
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
-  const renderTransaction = ({
-    item,
-  }: {
-    item: MonthData["transactions"][0];
-  }) => {
-    const amt = formatCurrency(Math.abs(item.amount));
-    const bal = formatCurrency(item.runningBalance);
-    const cat = item.categories;
-    const iconKey = cat?.icon || "circle";
-    const iconName = iconMap[iconKey] || "circle";
-    const dateStr = item.date ? item.date.slice(5) : ""; // MM-DD
-    const isIncome = item.type === "income";
-
-    return (
-      <View style={styles.txRow}>
-        {/* 序号 */}
-        <View style={[styles.colSerial, styles.colCenter]}>
-          <Text style={styles.serialText}>{item.serialNo}</Text>
-        </View>
-
-        {/* 日期 */}
-        <View style={styles.colDate}>
-          <Text style={styles.dateText}>{dateStr}</Text>
-        </View>
-
-        {/* 项目（分类图标+名称+项目内容+备注） */}
-        <View style={styles.colItem}>
-          <View style={styles.itemRow}>
-            <View
-              style={[
-                styles.catIconWrap,
-                { backgroundColor: `${cat?.color || "#64748B"}18` },
-              ]}
-            >
-              <FontAwesome6
-                name={iconName as any}
-                size={11}
-                color={cat?.color || "#64748B"}
-              />
-            </View>
-            <View style={styles.itemTextWrap}>
-              <Text style={styles.itemTitle} numberOfLines={1}>
-                {item.project || cat?.name || "未分类"}
-              </Text>
-              {item.status && item.status !== "approved" && (
-                <View style={[styles.statusBadge, item.status === "pending" ? styles.statusPending : styles.statusRejected]}>
-                  <Text style={[styles.statusBadgeText, { color: item.status === "pending" ? "#92400E" : "#991B1B" }]}>
-                    {item.status === "pending" ? "待审核" : "已驳回"}
-                  </Text>
-                </View>
-              )}
-              {item.project ? (
-                <Text style={styles.itemNote} numberOfLines={1}>
-                  {cat?.name || "未分类"}{item.note ? ` · ${item.note}` : ""}
-                </Text>
-              ) : (
-                <>
-                  <Text style={styles.itemNote} numberOfLines={1}>
-                    {cat?.name || "未分类"}
-                  </Text>
-                  {item.note ? (
-                    <Text style={styles.itemNote} numberOfLines={1}>
-                      {item.note}
-                    </Text>
-                  ) : null}
-                </>
-              )}
-            </View>
-          </View>
-        </View>
-
-        {/* 收入 */}
-        <View style={[styles.colAmount, styles.colRight]}>
-          {isIncome ? (
-            <Text style={styles.incomeAmount}>
-              ¥{amt.int}
-              <Text style={styles.amountDecimal}>.{amt.dec}</Text>
-            </Text>
-          ) : (
-            <Text style={styles.emptyCell}>-</Text>
-          )}
-        </View>
-
-        {/* 支出 */}
-        <View style={[styles.colAmount, styles.colRight]}>
-          {!isIncome ? (
-            <Text style={styles.expenseAmount}>
-              ¥{amt.int}
-              <Text style={styles.amountDecimal}>.{amt.dec}</Text>
-            </Text>
-          ) : (
-            <Text style={styles.emptyCell}>-</Text>
-          )}
-        </View>
-
-        {/* 余额 */}
-        <View style={[styles.colBalance, styles.colRight]}>
-          <Text style={styles.balanceAmount}>
-            ¥{bal.int}
-            <Text style={styles.balanceDecimal}>.{bal.dec}</Text>
+            {monthData.carry_forward >= 0 ? "+" : ""}
+            {monthData.carry_forward.toFixed(2)}
           </Text>
         </View>
       </View>
@@ -348,35 +419,34 @@ export default function HomeScreen() {
   };
 
   const renderFooter = () => {
-    if (!monthData || monthData.transactions.length === 0) return null;
-    const totalIn = formatCurrency(monthData.totalIncome);
-    const totalOut = formatCurrency(monthData.totalExpense);
-    const endBal = formatCurrency(monthData.endBalance);
+    if (!monthData) return null;
     return (
       <View style={styles.footerRow}>
-        <View style={[styles.colSerial, styles.colCenter]}>
-          <Text style={styles.footerLabel}>合计</Text>
-        </View>
-        <View style={styles.colDate} />
-        <View style={styles.colItem}>
-          <Text style={styles.footerLabel}>本月合计</Text>
+        <Text style={[styles.footerLabel, styles.colSerial, styles.colCenter]}>
+          -
+        </Text>
+        <Text style={[styles.footerText, styles.colDate, styles.colCenter]}>
+          -
+        </Text>
+        <Text style={[styles.footerLabel, styles.colItem]}>本月合计</Text>
+        <View style={[styles.colAmount, styles.colRight]}>
+          {monthData.total_income > 0 ? (
+            <AmountCell amount={monthData.total_income} isIncome={true} />
+          ) : (
+            <Text style={styles.emptyCell}>-</Text>
+          )}
         </View>
         <View style={[styles.colAmount, styles.colRight]}>
-          <Text style={styles.footerIncome}>
-            ¥{totalIn.int}
-            <Text style={styles.footerDecimal}>.{totalIn.dec}</Text>
-          </Text>
-        </View>
-        <View style={[styles.colAmount, styles.colRight]}>
-          <Text style={styles.footerExpense}>
-            ¥{totalOut.int}
-            <Text style={styles.footerDecimal}>.{totalOut.dec}</Text>
-          </Text>
+          {monthData.total_expense > 0 ? (
+            <AmountCell amount={monthData.total_expense} isIncome={false} />
+          ) : (
+            <Text style={styles.emptyCell}>-</Text>
+          )}
         </View>
         <View style={[styles.colBalance, styles.colRight]}>
           <Text style={styles.footerBalance}>
-            ¥{endBal.int}
-            <Text style={styles.footerDecimal}>.{endBal.dec}</Text>
+            {monthData.balance >= 0 ? "+" : ""}
+            {monthData.balance.toFixed(2)}
           </Text>
         </View>
       </View>
@@ -385,7 +455,7 @@ export default function HomeScreen() {
 
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
-      <FontAwesome6 name="book-open" size={40} color="#CBD5E1" />
+      <FontAwesome6 name="book-open" size={48} color="#D6D3D1" />
       <Text style={styles.emptyText}>本月暂无记录</Text>
       <Text style={styles.emptyHint}>{'点击底部"+"开始记账'}</Text>
     </View>
@@ -394,7 +464,7 @@ export default function HomeScreen() {
   return (
     <Screen safeAreaEdges={["left", "right"]}>
       <View style={styles.container}>
-        {/* Month Selector */}
+        {/* Month Selector + Store + Export */}
         <View style={styles.monthBar}>
           <TouchableOpacity
             style={styles.monthArrow}
@@ -411,7 +481,26 @@ export default function HomeScreen() {
           >
             <FontAwesome6 name="chevron-right" size={16} color="#475569" />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.exportBtn}
+            onPress={() => openExportModal("thisMonth")}
+          >
+            <FontAwesome6 name="download" size={14} color={COLORS.primary} />
+          </TouchableOpacity>
         </View>
+
+        {/* Store Selector Bar */}
+        <TouchableOpacity
+          style={styles.storeBar}
+          onPress={() => setStoreModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <FontAwesome6 name="store" size={12} color="#6B7280" />
+          <Text style={styles.storeBarText} numberOfLines={1}>
+            {selectedStoreName}
+          </Text>
+          <FontAwesome6 name="chevron-down" size={10} color="#9CA3AF" />
+        </TouchableOpacity>
 
         {/* Error State */}
         {error && (
@@ -455,26 +544,200 @@ export default function HomeScreen() {
           />
         ) : null}
       </View>
+
+      {/* Store Selector Modal */}
+      <Modal
+        visible={storeModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStoreModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setStoreModalVisible(false)}
+        >
+          <View style={styles.storeModalContent}>
+            <Text style={styles.storeModalTitle}>选择店铺</Text>
+            <ScrollView style={styles.storeModalList}>
+              <TouchableOpacity
+                style={[
+                  styles.storeOption,
+                  !selectedStoreId && styles.storeOptionActive,
+                ]}
+                onPress={() => handleStoreSelect(null)}
+              >
+                <FontAwesome6
+                  name="store"
+                  size={16}
+                  color={!selectedStoreId ? COLORS.primary : "#6B7280"}
+                />
+                <Text
+                  style={[
+                    styles.storeOptionText,
+                    !selectedStoreId && styles.storeOptionTextActive,
+                  ]}
+                >
+                  全部店铺
+                </Text>
+                {!selectedStoreId && (
+                  <FontAwesome6
+                    name="check"
+                    size={14}
+                    color={COLORS.primary}
+                  />
+                )}
+              </TouchableOpacity>
+              {stores.map((store: any) => (
+                <TouchableOpacity
+                  key={store.id}
+                  style={[
+                    styles.storeOption,
+                    selectedStoreId === store.id && styles.storeOptionActive,
+                  ]}
+                  onPress={() => handleStoreSelect(store)}
+                >
+                  <FontAwesome6
+                    name="store"
+                    size={16}
+                    color={
+                      selectedStoreId === store.id ? COLORS.primary : "#6B7280"
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.storeOptionText,
+                      selectedStoreId === store.id &&
+                        styles.storeOptionTextActive,
+                    ]}
+                  >
+                    {store.name}
+                  </Text>
+                  {selectedStoreId === store.id && (
+                    <FontAwesome6
+                      name="check"
+                      size={14}
+                      color={COLORS.primary}
+                    />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.storeModalClose}
+              onPress={() => setStoreModalVisible(false)}
+            >
+              <Text style={styles.storeModalCloseText}>关闭</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Export Modal */}
+      <Modal
+        visible={exportModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setExportModalVisible(false)}
+      >
+        <TouchableWithoutFeedback
+          onPress={() => {}}
+          disabled={Platform.OS === "web"}
+        >
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.exportModalContent}>
+                <Text style={styles.exportModalTitle}>导出数据</Text>
+
+                <ScrollView
+                  style={styles.exportModalBody}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {/* Quick Presets */}
+                  <Text style={styles.exportSectionLabel}>快速选择</Text>
+                  <View style={styles.exportPresets}>
+                    <TouchableOpacity
+                      style={styles.exportPresetBtn}
+                      onPress={() => openExportModal("thisMonth")}
+                    >
+                      <Text style={styles.exportPresetText}>本月</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.exportPresetBtn}
+                      onPress={() => openExportModal("lastMonth")}
+                    >
+                      <Text style={styles.exportPresetText}>上月</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.exportPresetBtn}
+                      onPress={() => openExportModal("all")}
+                    >
+                      <Text style={styles.exportPresetText}>全部</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Custom Date Range */}
+                  <Text style={styles.exportSectionLabel}>自定义时间</Text>
+                  <View style={styles.exportDateRow}>
+                    <View style={styles.exportDateField}>
+                      <Text style={styles.exportDateLabel}>开始日期</Text>
+                      <TextInput
+                        style={styles.exportDateInput}
+                        value={exportStartDate}
+                        onChangeText={setExportStartDate}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </View>
+                    <Text style={styles.exportDateSep}>至</Text>
+                    <View style={styles.exportDateField}>
+                      <Text style={styles.exportDateLabel}>结束日期</Text>
+                      <TextInput
+                        style={styles.exportDateInput}
+                        value={exportEndDate}
+                        onChangeText={setExportEndDate}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </View>
+                  </View>
+
+                  <Text style={styles.exportInfoText}>
+                    当前店铺筛选: {selectedStoreName}
+                  </Text>
+                </ScrollView>
+
+                <View style={styles.exportModalFooter}>
+                  <TouchableOpacity
+                    style={styles.exportCancelBtn}
+                    onPress={() => setExportModalVisible(false)}
+                    disabled={exporting}
+                  >
+                    <Text style={styles.exportCancelText}>取消</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.exportSubmitBtn}
+                    onPress={handleExport}
+                    disabled={exporting}
+                  >
+                    {exporting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.exportSubmitText}>导出</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
     </Screen>
   );
 }
-
-const COLORS = {
-  bg: "#FDFCF9",
-  tableBg: "#FFFFFF",
-  border: "#E8E4DB",
-  headerBg: "#F7F5F0",
-  headerText: "#5C4F3C",
-  text: "#2D2420",
-  textSecondary: "#8B7E6E",
-  income: "#0F7B4E",
-  incomeBg: "#ECFDF5",
-  expense: "#C2410C",
-  expenseBg: "#FFF7ED",
-  balance: "#1E3A5F",
-  carryForwardBg: "#F9F7F2",
-  footerBg: "#F7F5F0",
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -507,6 +770,38 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginHorizontal: 24,
     letterSpacing: 0.5,
+  },
+  exportBtn: {
+    position: "absolute",
+    right: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primaryLight,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Store Bar
+  storeBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  storeBarText: {
+    fontSize: 13,
+    color: "#374151",
+    fontWeight: "500",
+    maxWidth: 200,
   },
 
   // Error
@@ -687,15 +982,11 @@ const styles = StyleSheet.create({
   // Balance
   balanceAmount: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
     color: COLORS.balance,
   },
-  balanceDecimal: {
-    fontSize: 10,
-    fontWeight: "500",
-  },
 
-  // Footer (合计)
+  // Footer
   footerRow: {
     flexDirection: "row",
     backgroundColor: COLORS.footerBg,
@@ -703,33 +994,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderTopWidth: 2,
     borderTopColor: COLORS.border,
-    borderBottomWidth: 2,
-    borderBottomColor: COLORS.border,
-    alignItems: "center",
   },
   footerLabel: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: COLORS.headerText,
-  },
-  footerIncome: {
     fontSize: 13,
-    fontWeight: "800",
-    color: COLORS.income,
+    fontWeight: "700",
+    color: COLORS.text,
   },
-  footerExpense: {
+  footerText: {
     fontSize: 13,
-    fontWeight: "800",
-    color: COLORS.expense,
+    color: COLORS.textSecondary,
   },
   footerBalance: {
-    fontSize: 13,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "700",
     color: COLORS.balance,
-  },
-  footerDecimal: {
-    fontSize: 10,
-    fontWeight: "600",
   },
 
   // Empty
@@ -739,14 +1017,184 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "600",
-    color: COLORS.textSecondary,
+    color: "#9CA3AF",
     marginTop: 12,
   },
   emptyHint: {
     fontSize: 13,
-    color: "#B8B0A5",
+    color: "#D1D5DB",
     marginTop: 4,
+  },
+
+  // Modal Overlay
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Store Modal
+  storeModalContent: {
+    width: "80%",
+    maxHeight: "60%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 20,
+  },
+  storeModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.text,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  storeModalList: {
+    maxHeight: 300,
+  },
+  storeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  storeOptionActive: {
+    backgroundColor: COLORS.primaryLight,
+  },
+  storeOptionText: {
+    flex: 1,
+    fontSize: 15,
+    color: "#374151",
+    fontWeight: "500",
+  },
+  storeOptionTextActive: {
+    color: COLORS.primary,
+    fontWeight: "600",
+  },
+  storeModalClose: {
+    alignItems: "center",
+    paddingVertical: 12,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  storeModalCloseText: {
+    fontSize: 15,
+    color: "#6B7280",
+    fontWeight: "500",
+  },
+
+  // Export Modal
+  exportModalContent: {
+    width: "85%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 20,
+    maxHeight: "80%",
+  },
+  exportModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.text,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  exportModalBody: {
+    maxHeight: 350,
+  },
+  exportSectionLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#6B7280",
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  exportPresets: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  exportPresetBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  exportPresetText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.primary,
+  },
+  exportDateRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    marginBottom: 12,
+  },
+  exportDateField: {
+    flex: 1,
+  },
+  exportDateLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 4,
+  },
+  exportDateInput: {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: "#374151",
+  },
+  exportDateSep: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    paddingBottom: 8,
+  },
+  exportInfoText: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  exportModalFooter: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    paddingTop: 16,
+  },
+  exportCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+  },
+  exportCancelText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  exportSubmitBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+  },
+  exportSubmitText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
 });
