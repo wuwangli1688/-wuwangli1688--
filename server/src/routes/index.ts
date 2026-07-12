@@ -85,7 +85,7 @@ router.post("/categories", async (req: AuthenticatedRequest, res: Response) => {
 	}
 });
 
-// PUT /api/v1/categories/:id - Update custom category
+// PUT /api/v1/categories/:id - Update category (parent can edit system defaults)
 router.put("/categories/:id", async (req: AuthenticatedRequest, res: Response) => {
 	try {
 		// Child accounts cannot manage categories
@@ -94,23 +94,35 @@ router.put("/categories/:id", async (req: AuthenticatedRequest, res: Response) =
 		}
 		const client = getSupabaseClient();
 		const userId = req.userId!;
+		const role = req.userRole!;
 		const { id } = req.params;
 		const { name, icon, color } = req.body;
 
 		const { data: existing } = await client.from("categories").select("user_id").eq("id", id).single();
 		if (!existing) return res.status(404).json({ error: "分类不存在" });
-		if (existing.user_id !== userId) return res.status(403).json({ error: "不能修改系统默认分类" });
+
+		// System default categories (user_id is null): only parent accounts can edit
+		// Custom categories: only the owner can edit
+		if (existing.user_id === null) {
+			if (role !== 'parent') {
+				return res.status(403).json({ error: "只有主账号可以修改系统默认分类" });
+			}
+		} else if (existing.user_id !== userId) {
+			return res.status(403).json({ error: "无权修改此分类" });
+		}
 
 		const updates: any = {};
 		if (name) updates.name = name;
 		if (icon) updates.icon = icon;
 		if (color) updates.color = color;
 
-		const { data, error } = await client
-			.from("categories")
-			.update(updates)
-			.eq("id", id)
-			.eq("user_id", userId)
+		// For system defaults, don't filter by user_id (it's null)
+		const query = client.from("categories").update(updates).eq("id", id);
+		if (existing.user_id !== null) {
+			query.eq("user_id", userId);
+		}
+
+		const { data, error } = await query
 			.select("id, name, icon, type, color, sort_order, user_id")
 			.single();
 		if (error) throw new Error(`更新失败: ${error.message}`);

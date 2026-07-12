@@ -40,6 +40,7 @@ export default function StoresScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const isParent = user?.role === "parent";
+  const isChild = user?.role === "child";
 
   const [stores, setStores] = useState<Store[]>([]);
   const [subAccounts, setSubAccounts] = useState<SubAccount[]>([]);
@@ -217,12 +218,10 @@ export default function StoresScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>店铺管理</Text>
-          {isParent && (
-            <TouchableOpacity style={styles.addBtn} onPress={handleAddStore}>
-              <FontAwesome6 name="plus" size={16} color="#0284C7" />
-              <Text style={styles.addBtnText}>新增店铺</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.addBtn} onPress={handleAddStore}>
+            <FontAwesome6 name="plus" size={16} color="#0284C7" />
+            <Text style={styles.addBtnText}>新增店铺</Text>
+          </TouchableOpacity>
         </View>
 
         {loading ? (
@@ -252,8 +251,7 @@ export default function StoresScreen() {
                         <Text style={styles.storeNotes} numberOfLines={1}>{store.notes}</Text>
                       ) : null}
                     </View>
-                    {isParent && (
-                      <View style={styles.storeActions}>
+                    <View style={styles.storeActions}>
                         <TouchableOpacity
                           style={styles.actionBtn}
                           onPress={() => handleEditStore(store)}
@@ -267,7 +265,6 @@ export default function StoresScreen() {
                           <FontAwesome6 name="trash" size={14} color="#EF4444" />
                         </TouchableOpacity>
                       </View>
-                    )}
                   </View>
                 ))
               )}

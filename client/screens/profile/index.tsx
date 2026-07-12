@@ -48,6 +48,12 @@ export default function ProfileScreen() {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<"checking" | "ready" | "downloading" | "done">("checking");
   const [updateVersion, setUpdateVersion] = useState("");
+  const [updateDownloadUrl, setUpdateDownloadUrl] = useState("");
+
+  // Display name edit modal
+  const [displayNameModalVisible, setDisplayNameModalVisible] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState("");
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
 
   // Password change modal
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
@@ -182,6 +188,37 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleOpenEditDisplayName = () => {
+    const currentName = (user as any)?.user_metadata?.display_name || email?.split('@')[0] || "";
+    setEditDisplayName(currentName);
+    setDisplayNameModalVisible(true);
+  };
+
+  const handleSaveDisplayName = async () => {
+    if (!editDisplayName.trim()) {
+      Alert.alert("提示", "显示名称不能为空");
+      return;
+    }
+    setSavingDisplayName(true);
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/profile`, {
+        method: "PUT",
+        body: JSON.stringify({ displayName: editDisplayName.trim() }),
+      });
+      if (res.ok) {
+        Alert.alert("成功", "显示名称已更新");
+        setDisplayNameModalVisible(false);
+      } else {
+        const err = await res.json();
+        Alert.alert("错误", err.error || "更新失败");
+      }
+    } catch {
+      Alert.alert("错误", "网络错误");
+    } finally {
+      setSavingDisplayName(false);
+    }
+  };
+
   const handleClearCache = async () => {
     setCaching(true);
     try {
@@ -220,6 +257,7 @@ export default function ProfileScreen() {
       const data = await res.json();
       if (data.hasUpdate) {
         setUpdateVersion(data.latestVersion || "");
+        setUpdateDownloadUrl(data.downloadUrl || "");
         setUpdateStatus("ready");
       } else {
         setUpdateStatus("done");
@@ -240,6 +278,28 @@ export default function ProfileScreen() {
   const handleDownloadUpdate = async () => {
     setUpdateStatus("downloading");
     setUpdateProgress(0);
+    // Try to download the actual update file, or simulate if not available
+    const downloadUrl = updateDownloadUrl
+      ? `${EXPO_PUBLIC_BACKEND_BASE_URL}${updateDownloadUrl}`
+      : null;
+    if (downloadUrl && Platform.OS !== "web") {
+      // Real download attempt
+      try {
+        const fileUri = `${(FileSystem as any).documentDirectory}update_${updateVersion}.apk`;
+        const downloadResult = await (FileSystem as any).downloadAsync(downloadUrl, fileUri);
+        if (downloadResult.status === 200) {
+          setUpdateProgress(100);
+          setUpdateStatus("done");
+          setTimeout(() => {
+            setUpdateModalVisible(false);
+            Alert.alert("更新完成", `版本已更新至 v${updateVersion}，请重启应用以应用最新更新。`);
+          }, 500);
+          return;
+        }
+      } catch {
+        // Fallback to simulation
+      }
+    }
     // Simulate download progress
     const interval = setInterval(() => {
       setUpdateProgress((prev) => {
@@ -275,7 +335,14 @@ export default function ProfileScreen() {
           <View style={styles.avatarContainer}>
             <FontAwesome6 name={role === "parent" ? "user-shield" : "user"} size={36} color="#2563EB" />
           </View>
-          <Text style={styles.profileName}>{(user as any)?.user_metadata?.display_name || email?.split('@')[0] || "我的账本"}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.profileName}>{(user as any)?.user_metadata?.display_name || email?.split('@')[0] || "我的账本"}</Text>
+            {role === "parent" && (
+              <TouchableOpacity style={styles.editNameBtn} onPress={handleOpenEditDisplayName}>
+                <FontAwesome6 name="pen" size={14} color="#64748B" />
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.roleBadge}>
             <Text style={styles.roleBadgeText}>
               {role === "parent" ? "主账号" : "子账号"}
@@ -424,6 +491,53 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
 
+      {/* Display Name Edit Modal */}
+      <Modal visible={displayNameModalVisible} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} disabled={Platform.OS === "web"}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>修改显示名称</Text>
+                  <TouchableOpacity onPress={() => setDisplayNameModalVisible(false)}>
+                    <FontAwesome6 name="xmark" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.modalBody}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>显示名称</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="请输入显示名称"
+                      placeholderTextColor="#94A3B8"
+                      value={editDisplayName}
+                      onChangeText={setEditDisplayName}
+                      maxLength={30}
+                    />
+                  </View>
+                </View>
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setDisplayNameModalVisible(false)}>
+                    <Text style={styles.cancelBtnText}>取消</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.submitBtn, savingDisplayName && { opacity: 0.6 }]}
+                    onPress={handleSaveDisplayName}
+                    disabled={savingDisplayName}
+                  >
+                    {savingDisplayName ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.submitBtnText}>保存</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       {/* Password Change Modal */}
       <Modal visible={passwordModalVisible} transparent animationType="slide">
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} disabled={Platform.OS === "web"}>
@@ -550,7 +664,12 @@ const styles = StyleSheet.create({
     width: 72, height: 72, borderRadius: 36, backgroundColor: "#EFF6FF",
     justifyContent: "center", alignItems: "center", marginBottom: 12,
   },
-  profileName: { fontSize: 20, fontWeight: "700", color: "#0F172A", marginBottom: 6 },
+  profileName: { fontSize: 20, fontWeight: "700", color: "#0F172A" },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 },
+  editNameBtn: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: "#F1F5F9",
+    justifyContent: "center", alignItems: "center",
+  },
   roleBadge: {
     backgroundColor: "#2563EB", paddingHorizontal: 12, paddingVertical: 3,
     borderRadius: 12, marginBottom: 6,

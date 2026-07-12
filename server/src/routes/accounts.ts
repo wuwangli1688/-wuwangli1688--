@@ -266,6 +266,39 @@ router.post('/change-password', async (req: AuthenticatedRequest, res: Response)
   }
 });
 
+// ============ Profile Update (Display Name) ============
+
+// PUT /api/v1/accounts/profile - Update display name
+router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { displayName } = req.body;
+    if (!displayName || !displayName.trim()) {
+      return res.status(400).json({ error: '请输入显示名称' });
+    }
+    const client = getSupabaseClient();
+    const userId = req.userId!;
+
+    // Update user_metadata in Supabase Auth
+    const { error: authError } = await client.auth.updateUser({
+      data: { display_name: displayName.trim() },
+    });
+    if (authError) {
+      return res.status(500).json({ error: '更新失败: ' + authError.message });
+    }
+
+    // Also update user_profiles table
+    await client.from('user_profiles').upsert({
+      id: userId,
+      displayName: displayName.trim(),
+    }, { onConflict: 'id' });
+
+    return res.json({ message: '更新成功', displayName: displayName.trim() });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    return res.status(500).json({ error: '更新失败' });
+  }
+});
+
 // ============ Sub-account Management (Parent only) ============
 
 // POST /api/v1/accounts/sub-accounts - Create sub-account (parent only)
