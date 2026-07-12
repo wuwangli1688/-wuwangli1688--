@@ -160,7 +160,9 @@ export default function StoresScreen() {
           body: JSON.stringify({ name: storeName.trim(), notes: storeNotes.trim() || null }),
         });
         const result = await res.json();
-        if (!res.ok) throw new Error("创建失败");
+        if (!res.ok) {
+          throw new Error(result.error || "创建失败");
+        }
         storeId = result.data?.id;
       }
 

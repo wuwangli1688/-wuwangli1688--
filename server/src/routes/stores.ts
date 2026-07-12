@@ -54,6 +54,9 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
 router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, notes } = req.body;
+    console.log('[Store Create] Request body:', { name, notes });
+    console.log('[Store Create] User info:', { userId: req.userId, role: req.userRole, parentUserId: req.parentUserId });
+
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ error: '请提供店铺名称' });
     }
@@ -62,7 +65,14 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     const role = req.userRole!;
     const parentUserId = req.parentUserId;
     // Child accounts' stores are owned by the parent; parent accounts own their own
-    const ownerId = role === 'parent' ? req.userId! : parentUserId!;
+    const ownerId = role === 'parent' ? req.userId! : parentUserId;
+    
+    if (!ownerId) {
+      console.error('[Store Create] No owner ID available', { role, parentUserId, userId: req.userId });
+      return res.status(400).json({ error: '无法确定店铺所有者' });
+    }
+    
+    console.log('[Store Create] Owner ID:', ownerId);
 
     const { data, error } = await client
       .from('stores')
@@ -70,12 +80,22 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Store Create] Supabase error:', JSON.stringify(error, null, 2));
+      return res.status(500).json({ error: `创建店铺失败: ${error.message || '数据库错误'}` });
+    }
 
+    if (!data) {
+      console.error('[Store Create] No data returned from insert');
+      return res.status(500).json({ error: '创建店铺失败: 未返回数据' });
+    }
+
+    console.log('[Store Create] Success:', data);
     return res.status(201).json({ data, message: '店铺创建成功' });
   } catch (error) {
-    console.error('Create store error:', error);
-    return res.status(500).json({ error: '创建店铺失败' });
+    console.error('[Store Create] Error:', error);
+    const errorMessage = error instanceof Error ? error.message : '未知错误';
+    return res.status(500).json({ error: `创建店铺失败: ${errorMessage}` });
   }
 });
 
