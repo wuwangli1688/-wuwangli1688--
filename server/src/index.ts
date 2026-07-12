@@ -9,7 +9,22 @@ const app = express();
 const port = process.env.PORT || 9091;
 
 // Middleware
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:5000',
+  'https://wuwanli.online',
+  'http://wuwanli.online',
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true); // 开发阶段允许所有来源，上线后可收紧
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
