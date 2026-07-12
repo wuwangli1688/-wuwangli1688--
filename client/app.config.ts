@@ -30,12 +30,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "UISupportedInterfaceOrientations": ["UIInterfaceOrientationPortrait"],
         "UIRequiresFullScreen": true,
         "ITSAppUsesNonExemptEncryption": false
-      },
-      "associatedDomains": [
-        `applinks:${slugAppName}.expo.app`
-      ],
-      "runtimeVersion": {
-        "policy": "sdkVersion"
       }
     },
     "android": {
@@ -59,12 +53,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      process.env.EXPO_PUBLIC_BACKEND_BASE_URL ? [
-        "expo-router",
-        {
-          "origin": process.env.EXPO_PUBLIC_BACKEND_BASE_URL
-        }
-      ] : 'expo-router',
+      'expo-router',
       [
         "expo-splash-screen",
         {
@@ -103,9 +92,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         }
       ]
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
     "extra": {
       "eas": {
         "projectId": projectId || undefined
