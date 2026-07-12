@@ -231,28 +231,27 @@ export default function AccountManageScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={s.listContent}
           renderItem={({ item }) => (
-            <View style={s.accountCard}>
-              <View style={s.accountAvatar}>
-                <FontAwesome6 name="user" size={20} color="#2563EB" />
-              </View>
-              <View style={s.accountInfo}>
-                <View style={s.accountNameRow}>
-                  <Text style={s.accountName}>{item.displayName || item.username}</Text>
-                  <View style={[s.roleBadge, item.role === 'parent' ? s.roleParent : s.roleChild]}>
-                    <Text style={s.roleBadgeText}>{item.role === 'parent' ? '主账号' : '子账号'}</Text>
-                  </View>
+            <TouchableOpacity onPress={() => handleEdit(item)} activeOpacity={0.7}>
+              <View style={s.accountCard}>
+                <View style={s.accountAvatar}>
+                  <FontAwesome6 name="user" size={20} color="#2563EB" />
                 </View>
-                <Text style={s.accountEmail}>{item.username}</Text>
+                <View style={s.accountInfo}>
+                  <View style={s.accountNameRow}>
+                    <Text style={s.accountName}>{item.displayName || item.username}</Text>
+                    <View style={[s.roleBadge, item.role === 'parent' ? s.roleParent : s.roleChild]}>
+                      <Text style={s.roleBadgeText}>{item.role === 'parent' ? '主账号' : '子账号'}</Text>
+                    </View>
+                  </View>
+                  <Text style={s.accountEmail}>{item.username}</Text>
+                </View>
+                <View style={s.accountActions}>
+                  <TouchableOpacity onPress={() => handleDelete(item)} style={s.actionBtn}>
+                    <FontAwesome6 name="trash" size={16} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={s.accountActions}>
-                <TouchableOpacity onPress={() => handleEdit(item)} style={s.actionBtn}>
-                  <FontAwesome6 name="pen" size={16} color="#64748B" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDelete(item)} style={s.actionBtn}>
-                  <FontAwesome6 name="trash" size={16} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            </View>
+            </TouchableOpacity>
           )}
         />
       )}

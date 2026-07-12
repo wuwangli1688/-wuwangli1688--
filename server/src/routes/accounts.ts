@@ -325,6 +325,56 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
     });
 
     if (createError) {
+      // If email already registered, check if it's a child of this parent that we can reclaim
+      if (createError.message?.includes('already registered')) {
+        // Try to find the existing user by listing users and matching email
+        const { data: userList } = await (serviceClient.auth.admin as any).listUsers();
+        const existingUser = userList?.users?.find((u: any) => u.email === supabaseEmail);
+        if (existingUser) {
+          // Check if this user is a child of the current parent
+          const { data: existingProfile } = await serviceClient
+            .from('user_profiles')
+            .select('id, role, parent_user_id')
+            .eq('id', existingUser.id)
+            .single();
+
+          if (existingProfile && existingProfile.role === 'child' && existingProfile.parent_user_id === parentId) {
+            // This sub-account already exists, update their password and return success
+            await (serviceClient.auth.admin as any).updateUserById(existingUser.id, {
+              password,
+              email_confirm: true,
+            });
+
+            // Update display name in profile
+            await serviceClient.from('user_profiles').update({
+              display_name: username,
+            }).eq('id', existingUser.id);
+
+            // Update store permissions if provided
+            if (store_ids && Array.isArray(store_ids) && store_ids.length > 0) {
+              // Remove old permissions
+              await serviceClient.from('store_permissions').delete().eq('user_id', existingUser.id);
+              // Insert new permissions
+              const inserts = store_ids.map((storeId: string) => ({
+                store_id: storeId,
+                user_id: existingUser.id,
+                granted_by: parentId,
+              }));
+              await serviceClient.from('store_permissions').insert(inserts);
+            }
+
+            return res.status(200).json({
+              id: existingUser.id,
+              username,
+              role: 'child',
+              store_ids: store_ids || [],
+              message: '子账号已更新',
+            });
+          }
+
+          return res.status(400).json({ error: '该用户名已被使用，请使用其他用户名' });
+        }
+      }
       return res.status(400).json({ error: '创建账号失败: ' + createError.message });
     }
 
