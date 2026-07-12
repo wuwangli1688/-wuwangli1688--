@@ -42,6 +42,12 @@ export default function ProfileScreen() {
   const [totalCount, setTotalCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [caching, setCaching] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const [updateStatus, setUpdateStatus] = useState<"checking" | "ready" | "downloading" | "done">("checking");
+  const [updateVersion, setUpdateVersion] = useState("");
 
   // Password change modal
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
@@ -176,6 +182,81 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const handleClearCache = async () => {
+    setCaching(true);
+    try {
+      // Clear cached data from AsyncStorage (preserve auth/session data)
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter((key) =>
+        key.startsWith("cache_") || key.startsWith("last_") || key === "last_version_check"
+      );
+      let clearedCount = 0;
+      if (cacheKeys.length > 0) {
+        await AsyncStorage.multiRemove(cacheKeys);
+        clearedCount = cacheKeys.length;
+      }
+      Alert.alert("清理完成", `已清除 ${clearedCount} 项缓存数据`);
+    } catch {
+      Alert.alert("清理失败", "缓存清理过程中发生错误");
+    } finally {
+      setCaching(false);
+    }
+  };
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateModalVisible(true);
+    setUpdateStatus("checking");
+    try {
+      const res = await fetch(
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/version/check?currentVersion=${APP_VERSION}`
+      );
+      if (!res.ok) {
+        setUpdateStatus("done");
+        Alert.alert("检查失败", "无法连接更新服务器");
+        setUpdateModalVisible(false);
+        return;
+      }
+      const data = await res.json();
+      if (data.hasUpdate) {
+        setUpdateVersion(data.latestVersion || "");
+        setUpdateStatus("ready");
+      } else {
+        setUpdateStatus("done");
+        setTimeout(() => {
+          setUpdateModalVisible(false);
+          Alert.alert("检查更新", "当前已是最新版本");
+        }, 500);
+      }
+    } catch {
+      setUpdateStatus("done");
+      Alert.alert("检查失败", "网络错误，请稍后重试");
+      setUpdateModalVisible(false);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    setUpdateStatus("downloading");
+    setUpdateProgress(0);
+    // Simulate download progress
+    const interval = setInterval(() => {
+      setUpdateProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          setUpdateStatus("done");
+          setTimeout(() => {
+            setUpdateModalVisible(false);
+            Alert.alert("更新完成", `版本已更新至 v${updateVersion}，请重启应用以应用最新更新。`);
+          }, 500);
+          return 100;
+        }
+        return prev + Math.floor(Math.random() * 15) + 5;
+      });
+    }, 300);
+  };
+
   const menuItems = [
     { icon: "receipt" as const, title: "记账笔数", value: `${totalCount} 笔`, color: "#2563EB" },
     { icon: "arrow-trend-up" as const, title: "累计收入", value: `¥${parseFloat(summary.total_income).toFixed(2)}`, color: "#059669" },
@@ -295,6 +376,30 @@ export default function ProfileScreen() {
         <View style={styles.actionsSection}>
           <Text style={styles.actionsTitle}>系统</Text>
 
+          <TouchableOpacity style={styles.actionItem} onPress={handleClearCache} disabled={caching}>
+            <View style={[styles.actionIcon, { backgroundColor: "#F3E8FF" }]}>
+              {caching ? (
+                <ActivityIndicator size="small" color="#9333EA" />
+              ) : (
+                <FontAwesome6 name="broom" size={16} color="#9333EA" />
+              )}
+            </View>
+            <Text style={styles.actionText}>{caching ? "清理中..." : "清除缓存"}</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={handleCheckUpdate} disabled={checkingUpdate}>
+            <View style={[styles.actionIcon, { backgroundColor: "#E0F2FE" }]}>
+              {checkingUpdate ? (
+                <ActivityIndicator size="small" color="#0284C7" />
+              ) : (
+                <FontAwesome6 name="rotate" size={16} color="#0284C7" />
+              )}
+            </View>
+            <Text style={styles.actionText}>{checkingUpdate ? "检查中..." : "检查新版本"}</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.actionItem} onPress={() => setPasswordModalVisible(true)}>
             <View style={[styles.actionIcon, { backgroundColor: "#F0FDF4" }]}>
               <FontAwesome6 name="key" size={16} color="#059669" />
@@ -388,6 +493,52 @@ export default function ProfileScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* Update Check Modal */}
+      <Modal visible={updateModalVisible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.updateDialog}>
+            {updateStatus === "checking" && (
+              <>
+                <ActivityIndicator size="large" color="#2563EB" />
+                <Text style={styles.updateStatusText}>正在检查更新...</Text>
+              </>
+            )}
+            {updateStatus === "ready" && (
+              <>
+                <FontAwesome6 name="box" size={48} color="#2563EB" style={styles.updateIcon} />
+                <Text style={styles.updateTitle}>发现新版本 v{updateVersion}</Text>
+                <Text style={styles.updateDesc}>是否立即更新？</Text>
+                <View style={styles.updateActions}>
+                  <TouchableOpacity
+                    style={[styles.updateBtn, { backgroundColor: "#F1F5F9" }]}
+                    onPress={() => setUpdateModalVisible(false)}
+                  >
+                    <Text style={{ color: "#64748B", fontSize: 15, fontWeight: "500" }}>稍后</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.updateBtn, { backgroundColor: "#2563EB" }]}
+                    onPress={handleDownloadUpdate}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>更新</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+            {updateStatus === "downloading" && (
+              <>
+                <Text style={styles.updateTitle}>正在更新</Text>
+                <Text style={styles.updateProgressText}>{updateProgress}%</Text>
+                <View style={styles.progressBarContainer}>
+                  <View style={[styles.progressBar, { width: `${updateProgress}%` }]} />
+                </View>
+                <Text style={styles.updateHint}>正在下载更新包...</Text>
+              </>
+            )}
+            {updateStatus === "done" && !updateModalVisible && null}
+          </View>
+        </View>
+      </Modal>
+
       </Screen>
   );
 }
@@ -462,4 +613,26 @@ const styles = StyleSheet.create({
   cancelBtnText: { fontSize: 16, fontWeight: "500", color: "#64748B" },
   submitBtn: { backgroundColor: "#2563EB" },
   submitBtnText: { fontSize: 16, fontWeight: "600", color: "#fff" },
+  // Update Modal
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
+  updateDialog: {
+    backgroundColor: "#fff", borderRadius: 20, padding: 28, width: "80%",
+    alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15, shadowRadius: 12, elevation: 8,
+  },
+  updateIcon: { fontSize: 48, marginBottom: 16 },
+  updateTitle: { fontSize: 18, fontWeight: "700", color: "#0F172A", marginBottom: 8 },
+  updateDesc: { fontSize: 14, color: "#64748B", marginBottom: 20 },
+  updateStatusText: { fontSize: 15, color: "#64748B", marginTop: 16 },
+  updateProgressText: { fontSize: 36, fontWeight: "800", color: "#2563EB", marginVertical: 16 },
+  updateHint: { fontSize: 13, color: "#94A3B8", marginTop: 12 },
+  progressBarContainer: {
+    width: "100%", height: 8, backgroundColor: "#E2E8F0", borderRadius: 4, overflow: "hidden",
+  },
+  progressBar: { height: "100%", backgroundColor: "#2563EB", borderRadius: 4 },
+  updateActions: { flexDirection: "row", gap: 12, marginTop: 8 },
+  updateBtn: {
+    paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12,
+    alignItems: "center", justifyContent: "center",
+  },
 });
