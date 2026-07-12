@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert } from "react-native";
 import { Screen } from "@/components/Screen";
 import { useAuth } from "@/contexts/AuthContext";
+import { authFetch } from "@/lib/supabase";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
 
 export default function RegisterScreen() {
@@ -10,6 +11,8 @@ export default function RegisterScreen() {
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [securityQuestion, setSecurityQuestion] = useState("");
+  const [securityAnswer, setSecurityAnswer] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -17,6 +20,9 @@ export default function RegisterScreen() {
   const handleRegister = async () => {
     setError("");
     const trimmedAccount = account.trim();
+    const trimmedQuestion = securityQuestion.trim();
+    const trimmedAnswer = securityAnswer.trim();
+
     if (!trimmedAccount) {
       setError("请输入账号（手机号/邮箱/用户名）");
       return;
@@ -29,16 +35,48 @@ export default function RegisterScreen() {
       setError("两次密码不一致");
       return;
     }
+    if (!trimmedQuestion) {
+      setError("请设置安全问题");
+      return;
+    }
+    if (!trimmedAnswer) {
+      setError("请填写安全问题答案");
+      return;
+    }
 
     setLoading(true);
-    const { error } = await signUp(trimmedAccount, password);
+    const { error: signUpError } = await signUp(trimmedAccount, password);
     setLoading(false);
 
-    if (error) {
-      setError(error.includes("already") ? "该账号已被注册" : "注册失败，请重试");
-    } else {
-      router.replace("/");
+    if (signUpError) {
+      setError(signUpError.includes("already") ? "该账号已被注册" : "注册失败，请重试");
+      return;
     }
+
+    // After successful signUp, save the security question
+    setLoading(true);
+    try {
+      const res = await authFetch(
+        `${process.env.EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/set-security-question`,
+        {
+          method: "POST",
+          body: JSON.stringify({ question: trimmedQuestion, answer: trimmedAnswer }),
+        }
+      );
+
+      if (!res.ok) {
+        setError("注册成功，但安全问题保存失败，请稍后重试");
+        return;
+      }
+    } catch {
+      setError("注册成功，但安全问题保存失败，请稍后重试");
+      return;
+    } finally {
+      setLoading(false);
+    }
+
+    Alert.alert("注册成功", "请牢记您的安全问题，用于找回密码");
+    router.replace("/");
   };
 
   return (
@@ -126,6 +164,39 @@ export default function RegisterScreen() {
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
+                  returnKeyType="done"
+                  onSubmitEditing={handleRegister}
+                />
+              </View>
+
+              <View className="mb-4">
+                <Text className="text-sm font-medium text-[#374151] mb-2">
+                  安全问题
+                </Text>
+                <TextInput
+                  className="bg-[#F9FAFB] rounded-xl px-4 py-3.5 text-base text-[#111827]"
+                  placeholder="设置安全问题（如：您最喜欢的颜色是什么？）"
+                  placeholderTextColor="#9CA3AF"
+                  value={securityQuestion}
+                  onChangeText={setSecurityQuestion}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                />
+              </View>
+
+              <View className="mb-6">
+                <Text className="text-sm font-medium text-[#374151] mb-2">
+                  安全问题答案
+                </Text>
+                <TextInput
+                  className="bg-[#F9FAFB] rounded-xl px-4 py-3.5 text-base text-[#111827]"
+                  placeholder="请填写安全问题答案"
+                  placeholderTextColor="#9CA3AF"
+                  value={securityAnswer}
+                  onChangeText={setSecurityAnswer}
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   returnKeyType="done"
                   onSubmitEditing={handleRegister}
                 />

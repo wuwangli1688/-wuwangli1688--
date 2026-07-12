@@ -92,8 +92,133 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   }
 });
 
+// ============ Security Question Password Reset (no auth required) ============
+// POST /api/v1/accounts/get-security-question - Get security question by email
+router.post('/get-security-question', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: '请提供邮箱地址' });
+    }
+
+    const adminClient = getSupabaseClient();
+    const targetEmail = toSupabaseEmail(email);
+
+    // Find user by email in user_profiles via auth lookup
+    const { data: { users } } = await adminClient.auth.admin.listUsers();
+    const user = users?.find(u => u.email === targetEmail);
+
+    if (!user) {
+      return res.status(404).json({ error: '账户不存在' });
+    }
+
+    // Query the user_profiles table for security question
+    const { data: profile, error: profileError } = await adminClient
+      .from('user_profiles')
+      .select('security_question')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError || !profile || !profile.security_question) {
+      return res.status(404).json({ error: '未设置安全问题' });
+    }
+
+    return res.json({ question: profile.security_question });
+  } catch (error) {
+    console.error('Get security question error:', error);
+    return res.status(500).json({ error: '请求失败' });
+  }
+});
+
+// POST /api/v1/accounts/reset-password-with-question - Reset password using security answer
+router.post('/reset-password-with-question', async (req: Request, res: Response) => {
+  try {
+    const { email, answer, newPassword } = req.body;
+    if (!email || !answer || !newPassword) {
+      return res.status(400).json({ error: '请提供邮箱、问题和答案' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: '密码长度至少8位' });
+    }
+
+    const adminClient = getSupabaseClient();
+    const targetEmail = toSupabaseEmail(email);
+
+    // Find user by email
+    const { data: { users } } = await adminClient.auth.admin.listUsers();
+    const user = users?.find(u => u.email === targetEmail);
+
+    if (!user) {
+      return res.status(404).json({ error: '账户不存在' });
+    }
+
+    // Query user_profiles for security answer
+    const { data: profile, error: profileError } = await adminClient
+      .from('user_profiles')
+      .select('security_answer')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError || !profile || !profile.security_answer) {
+      return res.status(400).json({ error: '未设置安全问题' });
+    }
+
+    // Compare answers case-insensitively
+    if (profile.security_answer.toLowerCase() !== answer.toLowerCase()) {
+      return res.status(400).json({ error: '安全问题答案错误' });
+    }
+
+    // Update the Supabase auth user's password
+    const { error: updateError } = await adminClient.auth.admin.updateUserById(user.id, {
+      password: newPassword,
+    });
+
+    if (updateError) {
+      return res.status(500).json({ error: '密码重置失败: ' + updateError.message });
+    }
+
+    return res.json({ message: '密码重置成功，请使用新密码登录' });
+  } catch (error) {
+    console.error('Reset password with question error:', error);
+    return res.status(500).json({ error: '重置失败' });
+  }
+});
+
 // All routes below require authentication
 router.use(authMiddleware);
+
+// ============ Security Question (auth required) ============
+// POST /api/v1/accounts/set-security-question - Set or update security question
+router.post('/set-security-question', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { question, answer } = req.body;
+    if (!question || !answer) {
+      return res.status(400).json({ error: '请提供安全问题及答案' });
+    }
+
+    const userId = req.userId!;
+    const token = req.headers['x-session'] as string;
+    const client = getSupabaseClient(token);
+
+    // Update user_profiles with security question and answer
+    const { error: updateError } = await client
+      .from('user_profiles')
+      .update({
+        security_question: question,
+        security_answer: answer,
+      })
+      .eq('id', userId);
+
+    if (updateError) {
+      return res.status(500).json({ error: '设置安全问题失败: ' + updateError.message });
+    }
+
+    return res.json({ message: '安全问题设置成功' });
+  } catch (error) {
+    console.error('Set security question error:', error);
+    return res.status(500).json({ error: '设置安全问题失败' });
+  }
+});
 
 // ============ Password Change ============
 // POST /api/v1/accounts/change-password
@@ -146,9 +271,9 @@ router.post('/change-password', async (req: AuthenticatedRequest, res: Response)
 // POST /api/v1/accounts/sub-accounts - Create sub-account (parent only)
 router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { email, password, displayName, store_ids } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: '请提供邮箱和密码' });
+    const { username, password, store_ids } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: '请提供用户名和密码' });
     }
     if (password.length < 6) {
       return res.status(400).json({ error: '密码长度至少6位' });
@@ -156,13 +281,14 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
 
     const parentId = req.userId!;
     const serviceClient = getSupabaseClient();
+    const supabaseEmail = toSupabaseEmail(username);
 
     // Create user via service role (admin API)
     const { data: newUser, error: createError } = await (serviceClient.auth.admin as any).createUser({
-      email,
+      email: supabaseEmail,
       password,
       email_confirm: true,
-      user_metadata: { display_name: displayName || '子账号' },
+      user_metadata: { display_name: username },
     });
 
     if (createError) {
@@ -176,7 +302,7 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
       id: newUserId,
       role: 'child',
       parentUserId: parentId,
-      displayName: displayName || '子账号',
+      displayName: username,
     });
 
     // Grant store permissions if store_ids provided
@@ -196,8 +322,7 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
 
     return res.status(201).json({
       id: newUserId,
-      email: newUser.user.email,
-      displayName: displayName || '子账号',
+      username,
       role: 'child',
       store_ids: store_ids || [],
     });

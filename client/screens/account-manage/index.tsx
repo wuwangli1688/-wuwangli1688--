@@ -23,7 +23,7 @@ import { authFetch } from '@/lib/supabase';
 
 interface SubAccount {
   id: string;
-  email: string;
+  username: string;
   displayName: string;
   role: string;
   createdAt: string;
@@ -45,9 +45,8 @@ export default function AccountManageScreen() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingAccount, setEditingAccount] = useState<SubAccount | null>(null);
-  const [formEmail, setFormEmail] = useState('');
+  const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
-  const [formName, setFormName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [storesList, setStoresList] = useState<Store[]>([]);
@@ -88,18 +87,16 @@ export default function AccountManageScreen() {
 
   const handleEdit = (account: SubAccount) => {
     setEditingAccount(account);
-    setFormEmail(account.email);
+    setFormUsername(account.username || account.displayName || '');
     setFormPassword('');
-    setFormName(account.displayName);
     setSelectedStoreIds(account.store_ids || []);
     setModalVisible(true);
   };
 
   const handleAdd = () => {
     setEditingAccount(null);
-    setFormEmail('');
+    setFormUsername('');
     setFormPassword('');
-    setFormName('');
     setSelectedStoreIds([]);
     setModalVisible(true);
   };
@@ -107,7 +104,7 @@ export default function AccountManageScreen() {
   const handleDelete = (account: SubAccount) => {
     Alert.alert(
       '确认删除',
-      `确定要删除子账号 "${account.displayName}" 吗？该账号的所有数据将被清除。`,
+      `确定要删除子账号 "${account.username || account.displayName}" 吗？该账号的所有数据将被清除。`,
       [
         { text: '取消', style: 'cancel' },
         {
@@ -132,17 +129,20 @@ export default function AccountManageScreen() {
   };
 
   const handleSubmit = async () => {
-    if (editingAccount) {
-      // Update
-      if (!formName.trim()) {
-        Alert.alert('提示', '请输入账号名称');
-        return;
-      }
-      setSubmitting(true);
-      try {
-        const body: Record<string, string | string[]> = { displayName: formName.trim() };
-        if (formPassword) body.password = formPassword;
-        body.store_ids = selectedStoreIds;
+    if (!formUsername.trim()) {
+      Alert.alert('提示', '请填写用户名');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const body: Record<string, any> = {
+        username: formUsername.trim(),
+        displayName: formUsername.trim(),
+        store_ids: selectedStoreIds,
+      };
+      if (formPassword) body.password = formPassword;
+
+      if (editingAccount) {
         const res = await authFetch(
           `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/sub-accounts/${editingAccount.id}`,
           {
@@ -157,33 +157,20 @@ export default function AccountManageScreen() {
           const err = await res.json();
           Alert.alert('错误', err.error || '更新失败');
         }
-      } catch {
-        Alert.alert('错误', '网络错误');
-      } finally {
-        setSubmitting(false);
-      }
-    } else {
-      // Create
-      if (!formEmail.trim() || !formPassword.trim()) {
-        Alert.alert('提示', '请输入邮箱和密码');
-        return;
-      }
-      if (formPassword.length < 6) {
-        Alert.alert('提示', '密码长度至少6位');
-        return;
-      }
-      setSubmitting(true);
-      try {
+      } else {
+        if (!formPassword.trim()) {
+          Alert.alert('提示', '请填写密码');
+          return;
+        }
+        if (formPassword.length < 6) {
+          Alert.alert('提示', '密码长度至少6位');
+          return;
+        }
         const res = await authFetch(
           `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/sub-accounts`,
           {
             method: 'POST',
-            body: JSON.stringify({
-              email: formEmail.trim(),
-              password: formPassword,
-              displayName: formName.trim() || '子账号',
-              store_ids: selectedStoreIds,
-            }),
+            body: JSON.stringify(body),
           }
         );
         if (res.ok) {
@@ -193,11 +180,11 @@ export default function AccountManageScreen() {
           const err = await res.json();
           Alert.alert('错误', err.error || '创建失败');
         }
-      } catch {
-        Alert.alert('错误', '网络错误');
-      } finally {
-        setSubmitting(false);
       }
+    } catch {
+      Alert.alert('错误', '网络错误');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -249,12 +236,12 @@ export default function AccountManageScreen() {
               </View>
               <View style={s.accountInfo}>
                 <View style={s.accountNameRow}>
-                  <Text style={s.accountName}>{item.displayName}</Text>
+                  <Text style={s.accountName}>{item.displayName || item.username}</Text>
                   <View style={[s.roleBadge, item.role === 'parent' ? s.roleParent : s.roleChild]}>
                     <Text style={s.roleBadgeText}>{item.role === 'parent' ? '主账号' : '子账号'}</Text>
                   </View>
                 </View>
-                <Text style={s.accountEmail}>{item.email}</Text>
+                <Text style={s.accountEmail}>{item.username}</Text>
               </View>
               <View style={s.accountActions}>
                 <TouchableOpacity onPress={() => handleEdit(item)} style={s.actionBtn}>
@@ -288,20 +275,17 @@ export default function AccountManageScreen() {
                 </View>
 
                 <View style={s.modalBody}>
-                  {!editingAccount && (
-                    <View style={s.inputGroup}>
-                      <Text style={s.label}>邮箱</Text>
-                      <TextInput
-                        style={s.textInput}
-                        placeholder="子账号邮箱"
-                        placeholderTextColor="#94A3B8"
-                        value={formEmail}
-                        onChangeText={setFormEmail}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                      />
-                    </View>
-                  )}
+                  <View style={s.inputGroup}>
+                    <Text style={s.label}>用户名</Text>
+                    <TextInput
+                      style={s.textInput}
+                      placeholder="汉字/英文/数字/手机号"
+                      placeholderTextColor="#94A3B8"
+                      value={formUsername}
+                      onChangeText={setFormUsername}
+                      autoCapitalize="none"
+                    />
+                  </View>
 
                   <View style={s.inputGroup}>
                     <Text style={s.label}>
@@ -317,21 +301,10 @@ export default function AccountManageScreen() {
                     />
                   </View>
 
-                  <View style={s.inputGroup}>
-                    <Text style={s.label}>账号名称</Text>
-                    <TextInput
-                      style={s.textInput}
-                      placeholder="例如：小明"
-                      placeholderTextColor="#94A3B8"
-                      value={formName}
-                      onChangeText={setFormName}
-                    />
-                  </View>
-
                   {storesList.length > 0 && (
                     <View style={s.inputGroup}>
                       <Text style={s.label}>关联店铺</Text>
-                      <Text style={s.subLabel}>选择子账号可管理的店铺</Text>
+                      <Text style={s.subLabel}>选择关联店铺后数据共享</Text>
                       <View style={s.storeList}>
                         {storesList.map((store) => {
                           const isSelected = selectedStoreIds.includes(store.id);
