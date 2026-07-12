@@ -12,41 +12,22 @@ router.use(authMiddleware);
 // ============ Store CRUD ============
 
 // GET /api/v1/stores - Get stores visible to current user
-// Parent: all their stores; Child: stores they have permission for
+// All users see stores owned by their parent account (or own if parent)
 router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const client = getSupabaseClient();
     const userId = req.userId!;
     const role = req.userRole!;
+    const parentUserId = req.parentUserId;
 
-    let storeIds: string[] = [];
-
-    if (role === 'parent') {
-      // Parent sees all their stores
-      const { data, error } = await client
-        .from('stores')
-        .select('id')
-        .eq('owner_id', userId);
-      if (error) throw error;
-      storeIds = (data || []).map((s: any) => s.id);
-    } else {
-      // Child sees only permitted stores
-      const { data, error } = await client
-        .from('store_permissions')
-        .select('store_id')
-        .eq('user_id', userId);
-      if (error) throw error;
-      storeIds = (data || []).map((p: any) => p.store_id);
-    }
-
-    if (storeIds.length === 0) {
-      return res.json({ data: [] });
-    }
+    // Determine the effective owner: parent accounts use their own ID,
+    // child accounts use their parent's ID
+    const ownerId = role === 'parent' ? userId : parentUserId!;
 
     const { data: stores, error } = await client
       .from('stores')
       .select('id, name, notes, owner_id, created_at')
-      .in('id', storeIds)
+      .eq('owner_id', ownerId)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
@@ -69,8 +50,8 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-// POST /api/v1/stores - Create a store (parent only)
-router.post('/', requireParent, async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/v1/stores - Create a store
+router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, notes } = req.body;
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -78,7 +59,10 @@ router.post('/', requireParent, async (req: AuthenticatedRequest, res: Response)
     }
 
     const client = getSupabaseClient();
-    const ownerId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
+    // Child accounts' stores are owned by the parent; parent accounts own their own
+    const ownerId = role === 'parent' ? req.userId! : parentUserId!;
 
     const { data, error } = await client
       .from('stores')
@@ -140,8 +124,8 @@ router.post('/permissions', requireParent, async (req: AuthenticatedRequest, res
   }
 });
 
-// PUT /api/v1/stores/:id - Update store name (parent only, must be owner)
-router.put('/:id', requireParent, async (req: AuthenticatedRequest, res: Response) => {
+// PUT /api/v1/stores/:id - Update store name
+router.put('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { name, notes } = req.body;
@@ -150,7 +134,9 @@ router.put('/:id', requireParent, async (req: AuthenticatedRequest, res: Respons
     }
 
     const client = getSupabaseClient();
-    const ownerId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
+    const ownerId = role === 'parent' ? req.userId! : parentUserId!;
 
     // Verify ownership
     const { data: store } = await client
@@ -181,12 +167,14 @@ router.put('/:id', requireParent, async (req: AuthenticatedRequest, res: Respons
   }
 });
 
-// DELETE /api/v1/stores/:id - Delete a store (parent only, must be owner)
-router.delete('/:id', requireParent, async (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/v1/stores/:id - Delete a store
+router.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const client = getSupabaseClient();
-    const ownerId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
+    const ownerId = role === 'parent' ? req.userId! : parentUserId!;
 
     // Verify ownership
     const { data: store } = await client
