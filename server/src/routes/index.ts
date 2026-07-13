@@ -367,7 +367,7 @@ router.get("/transactions/stats-by-category", async (req: AuthenticatedRequest, 
 // GET /api/v1/transactions
 router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { page = "1", size = "20", type, category_id, start_date, end_date, store_id } = req.query;
+    const { page = "1", size = "1000", type, category_id, start_date, end_date, store_id } = req.query;
     const pageNum = Math.max(1, parseInt(page as string));
     const sizeNum = Math.min(100, Math.max(1, parseInt(size as string)));
     const offset = (pageNum - 1) * sizeNum;

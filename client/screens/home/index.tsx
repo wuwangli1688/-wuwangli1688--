@@ -573,6 +573,7 @@ export default function HomeScreen() {
           keyExtractor={(item: any) => String(item.id)}
           renderItem={renderTransaction}
           removeClippedSubviews={false}
+          showsVerticalScrollIndicator={true}
           ListHeaderComponent={
             <View>
               {/* Month Selector + Store + Export */}
@@ -584,7 +585,7 @@ export default function HomeScreen() {
                   <FontAwesome6 name="chevron-left" size={16} color="#475569" />
                 </TouchableOpacity>
                 <Text style={styles.monthTitle}>
-                  {viewYear}年{monthLabels[viewMonth - 1]}
+                  {today.getFullYear()}年{String(today.getMonth() + 1).padStart(2, "0")}月{String(today.getDate()).padStart(2, "0")}日
                 </Text>
                 <TouchableOpacity
                   style={styles.monthArrow}
@@ -636,7 +637,6 @@ export default function HomeScreen() {
             />
           }
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
         />
       ) : null}
 
