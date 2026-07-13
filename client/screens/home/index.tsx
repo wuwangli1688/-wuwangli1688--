@@ -137,9 +137,11 @@ export default function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadStores();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadStores();
+    }, [loadStores])
+  );
 
   const fetchMonthData = useCallback(
     async (year: number, month: number) => {

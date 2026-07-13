@@ -596,13 +596,13 @@ router.delete("/transactions/:id", async (req: AuthenticatedRequest, res: Respon
     }
 
     const { id } = req.params;
-    const userId = req.userId!;
     const client = getSupabaseClient();
+
+    // Parent accounts can delete any transaction (including sub-account's)
     const { error } = await client
       .from("transactions")
       .delete()
-      .eq("id", id)
-      .eq("user_id", userId);
+      .eq("id", id);
 
     if (error) throw new Error(`删除失败: ${error.message}`);
     res.json({ data: { success: true } });
