@@ -15,17 +15,25 @@ router.use(authMiddleware);
 
 // ==================== Categories ====================
 
-// GET /api/v1/categories - Get all categories (system defaults + user custom)
+// GET /api/v1/categories - Get all categories (system defaults + user/parent custom)
 router.get("/categories", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const client = getSupabaseClient();
     const userId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
 
     // Get system default categories (user_id is null) + user's own categories
+    // For child accounts, also include parent's custom categories
+    let categoryFilter = `user_id.is.null,user_id.eq.${userId}`;
+    if (role === 'child' && parentUserId) {
+      categoryFilter += `,user_id.eq.${parentUserId}`;
+    }
+
     const { data, error } = await client
       .from("categories")
       .select("id, name, icon, type, color, sort_order, user_id")
-      .or(`user_id.is.null,user_id.eq.${userId}`)
+      .or(categoryFilter)
       .order("sort_order", { ascending: true });
     if (error) throw new Error(`查询失败: ${error.message}`);
     res.json({ data: data || [] });
@@ -44,12 +52,20 @@ router.get("/categories/by-type", async (req: AuthenticatedRequest, res: Respons
     }
     const client = getSupabaseClient();
     const userId = req.userId!;
+    const role = req.userRole!;
+    const parentUserId = req.parentUserId;
+
+    // For child accounts, also include parent's custom categories
+    let categoryFilter = `user_id.is.null,user_id.eq.${userId}`;
+    if (role === 'child' && parentUserId) {
+      categoryFilter += `,user_id.eq.${parentUserId}`;
+    }
 
     const { data, error } = await client
       .from("categories")
       .select("id, name, icon, type, color, sort_order, user_id")
       .eq("type", type as string)
-      .or(`user_id.is.null,user_id.eq.${userId}`)
+      .or(categoryFilter)
       .order("sort_order", { ascending: true });
     if (error) throw new Error(`查询失败: ${error.message}`);
     res.json({ data: data || [] });
