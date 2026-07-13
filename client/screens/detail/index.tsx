@@ -7,7 +7,12 @@ import {
   ScrollView,
   Alert,
   StyleSheet,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
   Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { useSafeRouter, useSafeSearchParams } from '@/hooks/useSafeRouter';
@@ -17,6 +22,19 @@ import { authFetch } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
+
+interface Category {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  type: 'income' | 'expense';
+}
+
+interface Store {
+  id: string;
+  name: string;
+}
 
 interface TransactionDetail {
   id: number;
@@ -41,6 +59,18 @@ export default function DetailScreen() {
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+
+  // Edit modal state
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [editType, setEditType] = useState<'income' | 'expense'>('expense');
+  const [editAmount, setEditAmount] = useState('');
+  const [editCategoryId, setEditCategoryId] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editStoreId, setEditStoreId] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     try {
@@ -100,6 +130,97 @@ export default function DetailScreen() {
       },
     ]);
   };
+
+  const openEditModal = async () => {
+    if (!detail) return;
+
+    // Set initial values
+    setEditType(detail.type);
+    setEditAmount(detail.amount);
+    setEditCategoryId(detail.category_id);
+    setEditNote(detail.note || '');
+    setEditDate(detail.date);
+    setEditStoreId(detail.store_id);
+
+    // Fetch categories and stores
+    try {
+      const [catRes, storeRes] = await Promise.all([
+        authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/categories`),
+        authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/stores`),
+      ]);
+
+      if (catRes.ok) {
+        const catData = await catRes.json();
+        setCategories(catData.data || []);
+      }
+      if (storeRes.ok) {
+        const storeData = await storeRes.json();
+        setStores(storeData.data || []);
+      }
+    } catch {
+      // silently fail - form will still work with empty selectors
+    }
+
+    setEditModalVisible(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!detail) return;
+
+    // Validate
+    if (!editAmount || isNaN(parseFloat(editAmount)) || parseFloat(editAmount) <= 0) {
+      Alert.alert('请输入有效金额');
+      return;
+    }
+    if (!editCategoryId) {
+      Alert.alert('请选择分类');
+      return;
+    }
+    if (!editDate) {
+      Alert.alert('请选择日期');
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        type: editType,
+        amount: editAmount,
+        category_id: editCategoryId,
+        note: editNote || null,
+        date: editDate,
+        store_id: editStoreId || null,
+      };
+
+      const res = await authFetch(
+        `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/transactions/${id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      );
+
+      if (res.ok) {
+        Alert.alert('修改成功', '记录已更新', [
+          { text: '确定', onPress: () => {
+            setEditModalVisible(false);
+            fetchDetail(); // Refresh detail
+          }},
+        ]);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        Alert.alert('修改失败', err.error || '无法更新记录');
+      }
+    } catch {
+      Alert.alert('网络错误', '请检查网络连接');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // Filter categories by type
+  const filteredCategories = categories.filter(c => c.type === editType);
 
   if (loading) {
     return (
@@ -233,6 +354,10 @@ export default function DetailScreen() {
         {/* Action Buttons */}
         {role === 'parent' && (
           <View style={s.actions}>
+            <TouchableOpacity style={s.editBtn} onPress={openEditModal}>
+              <FontAwesome6 name="pen-to-square" size={16} color="#4F46E5" />
+              <Text style={s.editBtnText}>编辑记录</Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={s.deleteBtn}
               onPress={handleDelete}
@@ -250,6 +375,167 @@ export default function DetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Edit Modal */}
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} disabled={Platform.OS === 'web'}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={s.modalOverlay}>
+              <View style={s.modalContent}>
+                {/* Header */}
+                <View style={s.modalHeader}>
+                  <Text style={s.modalTitle}>编辑记录</Text>
+                  <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                    <FontAwesome6 name="xmark" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={s.modalBody} contentContainerStyle={{ gap: 16, paddingBottom: 20 }}>
+                  {/* Type Selector */}
+                  <View>
+                    <Text style={s.fieldLabel}>类型</Text>
+                    <View style={s.typeRow}>
+                      <TouchableOpacity
+                        style={[s.typeBtn, editType === 'expense' && s.typeBtnActive]}
+                        onPress={() => setEditType('expense')}
+                      >
+                        <FontAwesome6 name="arrow-down" size={14} color={editType === 'expense' ? '#EF4444' : '#64748B'} />
+                        <Text style={[s.typeBtnText, editType === 'expense' && { color: '#EF4444' }]}>支出</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[s.typeBtn, editType === 'income' && s.typeIncomeActive]}
+                        onPress={() => setEditType('income')}
+                      >
+                        <FontAwesome6 name="arrow-up" size={14} color={editType === 'income' ? '#10B981' : '#64748B'} />
+                        <Text style={[s.typeBtnText, editType === 'income' && { color: '#10B981' }]}>收入</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Amount */}
+                  <View>
+                    <Text style={s.fieldLabel}>金额</Text>
+                    <TextInput
+                      style={s.input}
+                      value={editAmount}
+                      onChangeText={setEditAmount}
+                      keyboardType="decimal-pad"
+                      placeholder="0.00"
+                      placeholderTextColor="#94A3B8"
+                    />
+                  </View>
+
+                  {/* Category */}
+                  <View>
+                    <Text style={s.fieldLabel}>分类</Text>
+                    <View style={s.catGrid}>
+                      {filteredCategories.map((cat) => (
+                        <TouchableOpacity
+                          key={cat.id}
+                          style={[
+                            s.catItem,
+                            editCategoryId === cat.id && { backgroundColor: `${cat.color}20`, borderColor: cat.color },
+                          ]}
+                          onPress={() => setEditCategoryId(cat.id)}
+                        >
+                          <FontAwesome6 name={cat.icon as any} size={18} color={cat.color} />
+                          <Text style={s.catItemText}>{cat.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      {filteredCategories.length === 0 && (
+                        <Text style={{ color: '#94A3B8', fontSize: 14 }}>暂无分类</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Date */}
+                  <View>
+                    <Text style={s.fieldLabel}>日期</Text>
+                    <TextInput
+                      style={s.input}
+                      value={editDate}
+                      onChangeText={setEditDate}
+                      placeholder="2025-01-15"
+                      placeholderTextColor="#94A3B8"
+                      autoCapitalize="none"
+                    />
+                    <Text style={s.fieldHint}>格式：YYYY-MM-DD</Text>
+                  </View>
+
+                  {/* Store */}
+                  <View>
+                    <Text style={s.fieldLabel}>店铺（可选）</Text>
+                    <View>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.storeRow}>
+                      <TouchableOpacity
+                        style={[s.storeChip, editStoreId === null && s.storeChipActive]}
+                        onPress={() => setEditStoreId(null)}
+                      >
+                        <Text style={[s.storeChipText, editStoreId === null && s.storeChipTextActive]}>无</Text>
+                      </TouchableOpacity>
+                      {stores.map((store) => (
+                        <TouchableOpacity
+                          key={store.id}
+                          style={[s.storeChip, editStoreId === store.id && s.storeChipActive]}
+                          onPress={() => setEditStoreId(store.id)}
+                        >
+                          <Text style={[s.storeChipText, editStoreId === store.id && s.storeChipTextActive]}>
+                            {store.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                    </View>
+                  </View>
+
+                  {/* Note */}
+                  <View>
+                    <Text style={s.fieldLabel}>备注（可选）</Text>
+                    <TextInput
+                      style={[s.input, s.noteInput]}
+                      value={editNote}
+                      onChangeText={setEditNote}
+                      placeholder="添加备注..."
+                      placeholderTextColor="#94A3B8"
+                      multiline
+                      numberOfLines={3}
+                    />
+                  </View>
+                </ScrollView>
+
+                {/* Footer */}
+                <View style={s.modalFooter}>
+                  <TouchableOpacity
+                    style={s.cancelBtn}
+                    onPress={() => setEditModalVisible(false)}
+                  >
+                    <Text style={s.cancelBtnText}>取消</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={s.saveBtn}
+                    onPress={handleSaveEdit}
+                    disabled={editSaving}
+                  >
+                    {editSaving ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={s.saveBtnText}>保存</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
     </Screen>
   );
 }
@@ -393,6 +679,22 @@ const s = StyleSheet.create({
     gap: 12,
     marginTop: 8,
   },
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
+  },
+  editBtnText: {
+    fontSize: 15,
+    color: '#4F46E5',
+    fontWeight: '500',
+  },
   deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -408,5 +710,165 @@ const s = StyleSheet.create({
     fontSize: 15,
     color: '#EF4444',
     fontWeight: '500',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  modalBody: {
+    padding: 20,
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#475569',
+    marginBottom: 8,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  input: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#1E293B',
+  },
+  noteInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  typeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  typeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  typeBtnActive: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  typeIncomeActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  typeBtnText: {
+    fontSize: 15,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  catGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  catItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  catItemText: {
+    fontSize: 14,
+    color: '#1E293B',
+  },
+  storeRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  storeChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginRight: 8,
+  },
+  storeChipActive: {
+    backgroundColor: '#EEF2FF',
+    borderColor: '#4F46E5',
+  },
+  storeChipText: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  storeChipTextActive: {
+    color: '#4F46E5',
+    fontWeight: '500',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    fontSize: 16,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  saveBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#4F46E5',
+    alignItems: 'center',
+  },
+  saveBtnText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
 });

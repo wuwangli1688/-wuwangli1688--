@@ -494,8 +494,40 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
     }
 
     const { id } = req.params;
-    const { amount, type, category_id, note, date, project } = req.body;
+    const { amount, type, category_id, note, date, project, store_id } = req.body;
     const userId = req.userId!;
+    const client = getSupabaseClient();
+
+    // First, find the transaction to check ownership
+    const { data: existingTx, error: findError } = await client
+      .from("transactions")
+      .select("user_id")
+      .eq("id", id)
+      .single();
+
+    if (findError || !existingTx) {
+      return res.status(404).json({ error: "记录不存在" });
+    }
+
+    const txOwnerId = existingTx.user_id;
+
+    // For parent accounts: allow editing if the transaction belongs to them or their sub-accounts
+    if (req.userRole === 'parent' && txOwnerId !== userId) {
+      // Check if the transaction belongs to a sub-account
+      const { data: subProfile } = await client
+        .from("user_profiles")
+        .select("id")
+        .eq("id", txOwnerId)
+        .eq("parent_user_id", userId)
+        .eq("role", "child")
+        .maybeSingle();
+
+      if (!subProfile) {
+        return res.status(403).json({ error: "无权修改此记录" });
+      }
+    } else if (txOwnerId !== userId) {
+      return res.status(403).json({ error: "无权修改此记录" });
+    }
 
     const updateData: Record<string, unknown> = {};
     if (amount !== undefined) updateData.amount = String(amount);
@@ -504,13 +536,12 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
     if (note !== undefined) updateData.note = note || null;
     if (project !== undefined) updateData.project = project || null;
     if (date !== undefined) updateData.date = date;
+    if (store_id !== undefined) updateData.store_id = store_id;
 
-    const client = getSupabaseClient();
     const { data, error } = await client
       .from("transactions")
       .update(updateData)
       .eq("id", id)
-      .eq("user_id", userId)
       .select()
       .single();
 
