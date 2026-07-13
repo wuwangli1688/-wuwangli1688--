@@ -600,7 +600,7 @@ router.get('/pending', requireParent, async (req: AuthenticatedRequest, res: Res
 
     const subIds = (profiles || []).map(p => p.id);
     if (subIds.length === 0) {
-      return res.json([]);
+      return res.json({ data: [], count: 0 });
     }
 
     const { data: pendingTxns, error } = await serviceClient
@@ -619,7 +619,7 @@ router.get('/pending', requireParent, async (req: AuthenticatedRequest, res: Res
       return res.status(500).json({ error: error.message });
     }
 
-    return res.json(pendingTxns || []);
+    return res.json({ data: pendingTxns || [], count: pendingTxns?.length || 0 });
   } catch (error) {
     console.error('Get pending error:', error);
     return res.status(500).json({ error: '获取待审核列表失败' });

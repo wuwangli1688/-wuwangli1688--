@@ -101,6 +101,7 @@ export default function HomeScreen() {
   const [stores, setStores] = useState<any[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [selectedStoreName, setSelectedStoreName] = useState("全部店铺");
+  const isInitialLoad = useRef(true);
   const [storeModalVisible, setStoreModalVisible] = useState(false);
 
   // Export state
@@ -142,7 +143,8 @@ export default function HomeScreen() {
   const fetchMonthData = useCallback(
     async (year: number, month: number) => {
       try {
-        setLoading(true);
+        setLoading(isInitialLoad.current);
+        isInitialLoad.current = false;
         setError(null);
         // authFetch is already imported at top
 
