@@ -495,88 +495,85 @@ export default function HomeScreen() {
   );
 
   return (
-    <Screen safeAreaEdges={["left", "right"]}>
-      <View style={styles.container}>
-        {/* Month Selector + Store + Export */}
-        <View style={styles.monthBar}>
-          <TouchableOpacity
-            style={styles.monthArrow}
-            onPress={() => changeMonth(-1)}
-          >
-            <FontAwesome6 name="chevron-left" size={16} color="#475569" />
-          </TouchableOpacity>
-          <Text style={styles.monthTitle}>
-            {viewYear}年{monthLabels[viewMonth - 1]}
-          </Text>
-          <TouchableOpacity
-            style={styles.monthArrow}
-            onPress={() => changeMonth(1)}
-          >
-            <FontAwesome6 name="chevron-right" size={16} color="#475569" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.exportBtn}
-            onPress={() => openExportModal("thisMonth")}
-          >
-            <FontAwesome6 name="download" size={14} color={COLORS.primary} />
-          </TouchableOpacity>
+    <Screen safeAreaEdges={["top", "left", "right"]}>
+      {/* Loading */}
+      {loading && !monthData ? (
+        <View style={[styles.container, styles.loadingContainer]}>
+          <ActivityIndicator size="large" color="#2563EB" />
         </View>
-
-        {/* Store Selector Bar */}
-        <TouchableOpacity
-          style={styles.storeBar}
-          onPress={() => setStoreModalVisible(true)}
-          activeOpacity={0.7}
-        >
-          <FontAwesome6 name="store" size={12} color="#6B7280" />
-          <Text style={styles.storeBarText} numberOfLines={1}>
-            {selectedStoreName}
-          </Text>
-          <FontAwesome6 name="chevron-down" size={10} color="#9CA3AF" />
-        </TouchableOpacity>
-
-        {/* Error State */}
-        {error && (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity
-              onPress={() => fetchMonthData(viewYear, viewMonth)}
-            >
-              <Text style={styles.retryText}>重试</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Loading */}
-        {loading && !monthData ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#2563EB" />
-          </View>
-        ) : monthData ? (
-          <FlatList
-            data={monthData.transactions}
-            keyExtractor={(item) => item.id}
-            renderItem={renderTransaction}
-            ListHeaderComponent={
-              <View>
-                {renderTableHeader()}
-                {renderCarryForward()}
+      ) : monthData ? (
+        <FlatList
+          style={{ flex: 1 }}
+          data={monthData.data}
+          keyExtractor={(item: any) => String(item.id)}
+          renderItem={renderTransaction}
+          removeClippedSubviews={false}
+          ListHeaderComponent={
+            <View>
+              {/* Month Selector + Store + Export */}
+              <View style={styles.monthBar}>
+                <TouchableOpacity
+                  style={styles.monthArrow}
+                  onPress={() => changeMonth(-1)}
+                >
+                  <FontAwesome6 name="chevron-left" size={16} color="#475569" />
+                </TouchableOpacity>
+                <Text style={styles.monthTitle}>
+                  {viewYear}年{monthLabels[viewMonth - 1]}
+                </Text>
+                <TouchableOpacity
+                  style={styles.monthArrow}
+                  onPress={() => changeMonth(1)}
+                >
+                  <FontAwesome6 name="chevron-right" size={16} color="#475569" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.exportBtn}
+                  onPress={() => openExportModal("thisMonth")}
+                >
+                  <FontAwesome6 name="download" size={14} color={COLORS.primary} />
+                </TouchableOpacity>
               </View>
-            }
-            ListFooterComponent={renderFooter}
-            ListEmptyComponent={renderEmpty}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                tintColor="#2563EB"
-              />
-            }
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        ) : null}
-      </View>
+              {/* Store Selector Bar */}
+              <TouchableOpacity
+                style={styles.storeBar}
+                onPress={() => setStoreModalVisible(true)}
+                activeOpacity={0.7}
+              >
+                <FontAwesome6 name="store" size={12} color="#6B7280" />
+                <Text style={styles.storeBarText} numberOfLines={1}>
+                  {selectedStoreName}
+                </Text>
+                <FontAwesome6 name="chevron-down" size={10} color="#9CA3AF" />
+              </TouchableOpacity>
+              {/* Error State */}
+              {error && (
+                <View style={styles.errorBanner}>
+                  <Text style={styles.errorText}>{error}</Text>
+                  <TouchableOpacity
+                    onPress={() => fetchMonthData(viewYear, viewMonth)}
+                  >
+                    <Text style={styles.retryText}>重试</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {renderTableHeader()}
+              {renderCarryForward()}
+            </View>
+          }
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={renderEmpty}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#2563EB"
+            />
+          }
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      ) : null}
 
       {/* Store Selector Modal */}
       <Modal

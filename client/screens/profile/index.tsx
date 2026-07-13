@@ -22,6 +22,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
+import Constants from "expo-constants";
 import { authFetch } from "@/lib/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -64,7 +65,8 @@ function compareVersions(a: string, b: string): number {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<"checking" | "ready" | "downloading" | "done">("checking");
   const [updateVersion, setUpdateVersion] = useState("");
-  const [currentVersion, setCurrentVersion] = useState("1.0.2");
+  const APP_VERSION = Constants.expoConfig?.version || "1.0.2";
+  const [currentVersion, setCurrentVersion] = useState(APP_VERSION);
   const [updateDownloadUrl, setUpdateDownloadUrl] = useState("");
 
   // Store switching
@@ -81,7 +83,7 @@ function compareVersions(a: string, b: string): number {
         setCurrentVersion(stored);
       } else {
         // First run - store default version
-        await AsyncStorage.setItem("app_version", "1.0.2");
+        await AsyncStorage.setItem("app_version", APP_VERSION);
       }
     })();
   }, []);
