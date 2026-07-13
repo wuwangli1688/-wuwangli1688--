@@ -25,6 +25,7 @@ interface AuthState {
   session: Session | null;
   isLoading: boolean;
   role: string | null;
+  role_title: string | null;
   parentUserId: string | null;
 }
 
@@ -44,6 +45,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   isLoading: true,
   role: null,
+  role_title: null,
   parentUserId: null,
   isAuthenticated: false,
   email: null,
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session: null,
     isLoading: true,
     role: null,
+    role_title: null,
     parentUserId: null,
   });
 
@@ -83,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setState(prev => ({
           ...prev,
           role: profile.role || 'parent',
+          role_title: profile.role_title || '',
           parentUserId: profile.parentUserId || null,
         }));
       }
@@ -107,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             session,
             isLoading: false,
             role: null,
+            role_title: null,
             parentUserId: null,
           });
           await fetchProfile(session.user.id);
@@ -131,6 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 session: null,
                 isLoading: false,
                 role: null,
+                role_title: null,
                 parentUserId: null,
               });
             }
@@ -168,6 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         session: data.session,
         isLoading: false,
         role: null,
+        role_title: null,
         parentUserId: null,
       });
       await fetchProfile(data.session.user.id);
@@ -193,6 +200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         session: data.session,
         isLoading: false,
         role: null,
+        role_title: null,
         parentUserId: null,
       });
 
@@ -222,6 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session: null,
       isLoading: false,
       role: null,
+      role_title: null,
       parentUserId: null,
     });
   };

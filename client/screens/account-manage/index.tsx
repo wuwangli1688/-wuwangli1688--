@@ -27,6 +27,7 @@ interface SubAccount {
   username: string;
   displayName: string;
   role: string;
+  role_title?: string;
   createdAt: string;
   store_ids?: string[];
 }
@@ -48,6 +49,7 @@ export default function AccountManageScreen() {
   const [editingAccount, setEditingAccount] = useState<SubAccount | null>(null);
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
+  const [formRoleTitle, setFormRoleTitle] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [storesList, setStoresList] = useState<Store[]>([]);
@@ -90,6 +92,7 @@ export default function AccountManageScreen() {
     setEditingAccount(account);
     setFormUsername(account.username || account.displayName || '');
     setFormPassword('');
+    setFormRoleTitle(account.role_title || '');
     setSelectedStoreIds(account.store_ids || []);
     setModalVisible(true);
   };
@@ -98,6 +101,7 @@ export default function AccountManageScreen() {
     setEditingAccount(null);
     setFormUsername('');
     setFormPassword('');
+    setFormRoleTitle('');
     setSelectedStoreIds([]);
     setModalVisible(true);
   };
@@ -139,6 +143,7 @@ export default function AccountManageScreen() {
       const body: Record<string, any> = {
         username: formUsername.trim(),
         displayName: formUsername.trim(),
+        role_title: formRoleTitle.trim(),
         store_ids: selectedStoreIds,
       };
       if (formPassword) body.password = formPassword;
@@ -244,6 +249,9 @@ export default function AccountManageScreen() {
                     </View>
                   </View>
                   <Text style={s.accountEmail}>{item.username}</Text>
+                  {item.role_title ? (
+                    <Text style={s.roleTitle}>{item.role_title}</Text>
+                  ) : null}
                 </View>
                 <View style={s.accountActions}>
                   <TouchableOpacity onPress={() => handleDelete(item)} style={s.actionBtn}>
@@ -298,6 +306,17 @@ export default function AccountManageScreen() {
                       value={formPassword}
                       onChangeText={setFormPassword}
                       secureTextEntry
+                    />
+                  </View>
+
+                  <View style={s.inputGroup}>
+                    <Text style={s.label}>职能（如：书记员、会计、仓管）</Text>
+                    <TextInput
+                      style={s.textInput}
+                      placeholder="填写子账号的职能角色"
+                      placeholderTextColor="#94A3B8"
+                      value={formRoleTitle}
+                      onChangeText={setFormRoleTitle}
                     />
                   </View>
 
@@ -415,6 +434,17 @@ const s = StyleSheet.create({
   roleChild: { backgroundColor: '#FEF3C7' },
   roleBadgeText: { fontSize: 11, fontWeight: '600' },
   accountEmail: { fontSize: 13, color: '#64748B', marginTop: 2 },
+  roleTitle: {
+    fontSize: 12,
+    color: '#8B7E6E',
+    marginTop: 2,
+    backgroundColor: '#FFF7ED',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    overflow: 'hidden',
+  },
   accountActions: { flexDirection: 'row', gap: 8 },
   actionBtn: { padding: 8 },
   modalOverlay: {

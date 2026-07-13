@@ -35,7 +35,7 @@ interface Summary {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, role, email, signOut, refreshProfile } = useAuth();
+  const { user, role, role_title, email, signOut, refreshProfile } = useAuth();
 
 // Derive account name from email
 const accountName = email
@@ -443,6 +443,9 @@ function compareVersions(a: string, b: string): number {
             </Text>
           </View>
           <Text style={styles.profileDesc}>登录账号：{accountName}</Text>
+          {role === "child" && role_title ? (
+            <Text style={styles.roleTitleText}>职能：{role_title}</Text>
+          ) : null}
         </View>
 
         {/* Stats Grid */}
@@ -841,6 +844,7 @@ const styles = StyleSheet.create({
   },
   roleBadgeText: { color: "#fff", fontSize: 12, fontWeight: "600" },
   profileDesc: { fontSize: 13, color: "#64748B" },
+  roleTitleText: { fontSize: 13, color: "#8B7E6E", marginTop: 4 },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 24 },
   statCard: {
     width: "47%", backgroundColor: "#FFFFFF", borderRadius: 16, padding: 16,
