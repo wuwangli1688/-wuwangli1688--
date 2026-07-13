@@ -1,6 +1,6 @@
 {
-  "version": "1.0.10",
+  "version": "1.0.9",
   "minVersion": "1.0.0",
-  "releaseNotes": "修复：单日模式下 endDate 为空导致数据不显示的问题",
+  "releaseNotes": "优化：首页日期导航重构（可选年/月/日、多日模式、翻页箭头移至表格内）",
   "forceUpdate": false
 }

@@ -88,7 +88,7 @@ export default function HomeScreen() {
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const [startDate, setStartDate] = useState(monthStart);
-  const [endDate, setEndDate] = useState<Date>(today);
+  const [endDate, setEndDate] = useState<Date | null>(today);
   const [multiDay, setMultiDay] = useState(true);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [monthData, setMonthData] = useState<any>(null);
@@ -143,7 +143,7 @@ export default function HomeScreen() {
   );
 
   const fetchMonthData = useCallback(
-    async (sDate: Date, eDate: Date) => {
+    async (sDate: Date, eDate: Date | null) => {
       const currentId = ++requestId.current;
       try {
         setLoading(isInitialLoad.current);
@@ -151,7 +151,9 @@ export default function HomeScreen() {
         setError(null);
 
         const start = `${sDate.getFullYear()}-${String(sDate.getMonth() + 1).padStart(2, "0")}-${String(sDate.getDate()).padStart(2, "0")}`;
-        const end = `${eDate.getFullYear()}-${String(eDate.getMonth() + 1).padStart(2, "0")}-${String(eDate.getDate()).padStart(2, "0")}`;
+        const end = eDate
+          ? `${eDate.getFullYear()}-${String(eDate.getMonth() + 1).padStart(2, "0")}-${String(eDate.getDate()).padStart(2, "0")}`
+          : start;
 
         // Fetch transaction list
         const listParams = new URLSearchParams({
@@ -248,16 +250,17 @@ export default function HomeScreen() {
     const newDate = new Date(startDate);
     newDate.setDate(newDate.getDate() + delta);
     setStartDate(newDate);
-    // Shift the end date as well (endDate is always a valid Date)
-    const newEnd = new Date(endDate);
-    newEnd.setDate(newEnd.getDate() + delta);
-    setEndDate(newEnd);
+    if (endDate) {
+      // In multi-day mode, shift the entire range
+      const newEnd = new Date(endDate);
+      newEnd.setDate(newEnd.getDate() + delta);
+      setEndDate(newEnd);
+    }
   };
 
   const handleDateConfirm = (sDate: Date, eDate: Date | null, isMulti: boolean) => {
     setStartDate(sDate);
-    // Always set endDate to a valid Date (never null) to avoid timing issues
-    setEndDate(isMulti && eDate ? eDate : sDate);
+    setEndDate(eDate);
     setMultiDay(isMulti);
     setDatePickerVisible(false);
   };
