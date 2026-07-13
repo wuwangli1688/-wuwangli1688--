@@ -161,7 +161,7 @@ router.delete("/categories/:id", async (req: AuthenticatedRequest, res: Response
 
 // Helper: get visible user IDs for current user
 // Parent sees own + all sub-accounts' transactions
-// Child sees only own transactions
+// Child sees own transactions + parent's approved transactions
 async function getVisibleUserIds(client: any, userId: string, role: string, parentUserId: string | null): Promise<string[]> {
   if (role === 'parent') {
     // Get sub-account IDs
@@ -173,6 +173,16 @@ async function getVisibleUserIds(client: any, userId: string, role: string, pare
     const subIds = (profiles || []).map((p: any) => p.id);
     return [userId, ...subIds];
   } else {
+    // Child account: see own transactions + parent's approved transactions
+    if (parentUserId) {
+      const { data: siblingProfiles } = await client
+        .from('user_profiles')
+        .select('id')
+        .eq('parent_user_id', parentUserId)
+        .eq('role', 'child');
+      const siblingIds = (siblingProfiles || []).map((p: any) => p.id);
+      return [parentUserId, userId, ...siblingIds.filter((id: string) => id !== userId)];
+    }
     return [userId];
   }
 }
@@ -212,9 +222,11 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
       .in("user_id", visibleIds);
 
     // Parent accounts: only approved transactions
-    // Child accounts: ALL their own transactions (including pending)
+    // Child accounts: own pending + all approved
     if (role === 'parent') {
       query = query.eq("status", "approved");
+    } else {
+      query = query.or(`and(user_id.eq.${userId}),and(status.eq.approved,user_id.neq.${userId})`);
     }
 
     if (start_date) {
@@ -279,9 +291,11 @@ router.get("/transactions/stats-by-category", async (req: AuthenticatedRequest, 
       .in("user_id", visibleIds);
 
     // Parent accounts: only approved transactions
-    // Child accounts: ALL their own transactions (including pending)
+    // Child accounts: own pending + all approved
     if (role === 'parent') {
       query = query.eq("status", "approved");
+    } else {
+      query = query.or(`and(user_id.eq.${userId}),and(status.eq.approved,user_id.neq.${userId})`);
     }
 
     if (start_date) {
@@ -349,17 +363,26 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
 
     const visibleIds = await getVisibleUserIds(client, userId, role, parentUserId ?? null);
 
+    // Also fetch all categories upfront for mapping (in case joins fail)
+    const { data: allCategories } = await client
+      .from("categories")
+      .select("id, name, icon, color");
+    const categoryMap = new Map((allCategories || []).map((c: any) => [c.id, c]));
+
     let query = client
       .from("transactions")
-      .select("id, amount, type, category_id, note, date, status, user_id, store_id, created_at, reviewed_at, categories(name, icon, color), stores(name)", { count: "exact" })
+      .select("id, amount, type, category_id, note, project, date, status, user_id, store_id, created_at, reviewed_at, categories(name, icon, color), stores(name)", { count: "exact" })
       .in("user_id", visibleIds)
       .order("reviewed_at", { ascending: false })
       .order("date", { ascending: false });
 
     // Parent accounts: only approved transactions
-    // Child accounts: ALL their own transactions (including pending, approved, rejected)
+    // Child accounts: own pending + all approved (parent + siblings)
     if (role === 'parent') {
       query = query.eq("status", "approved");
+    } else {
+      // Child: own transactions (any status) + all other users' approved transactions
+      query = query.or(`and(user_id.eq.${userId}),and(status.eq.approved,user_id.neq.${userId})`);
     }
 
     if (type && ["income", "expense"].includes(type as string)) {
@@ -391,8 +414,19 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
     const { data, error, count } = await query.range(offset, offset + sizeNum - 1);
     if (error) throw new Error(`查询失败: ${error.message}`);
 
+    // Enrich categories for transactions where the join returned null
+    const enrichedData = (data || []).map((txn: any) => {
+      if (!txn.categories && txn.category_id) {
+        const cat = categoryMap.get(txn.category_id);
+        if (cat) {
+          txn.categories = { name: cat.name, icon: cat.icon, color: cat.color };
+        }
+      }
+      return txn;
+    });
+
     res.json({
-      data: data || [],
+      data: enrichedData,
       pagination: {
         page: pageNum,
         size: sizeNum,
@@ -419,7 +453,7 @@ router.get("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
 
     const { data, error } = await client
       .from("transactions")
-      .select("id, amount, type, category_id, note, date, status, user_id, store_id, created_at, updated_at, categories(name, icon, color), stores(name)")
+      .select("id, amount, type, category_id, note, project, date, status, user_id, store_id, created_at, updated_at, categories(name, icon, color), stores(name)")
       .eq("id", id)
       .in("user_id", visibleIds)
       .single();

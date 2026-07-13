@@ -42,6 +42,7 @@ interface TransactionDetail {
   type: 'income' | 'expense';
   category_id: string;
   note: string | null;
+  project: string | null;
   date: string;
   status: string;
   user_id: string;
@@ -68,6 +69,7 @@ export default function DetailScreen() {
   const [editAmount, setEditAmount] = useState('');
   const [editCategoryId, setEditCategoryId] = useState('');
   const [editNote, setEditNote] = useState('');
+  const [editProject, setEditProject] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editStoreId, setEditStoreId] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
@@ -139,6 +141,7 @@ export default function DetailScreen() {
     setEditAmount(detail.amount);
     setEditCategoryId(detail.category_id);
     setEditNote(detail.note || '');
+    setEditProject(detail.project || '');
     setEditDate(detail.date);
     setEditStoreId(detail.store_id);
 
@@ -188,6 +191,7 @@ export default function DetailScreen() {
         amount: editAmount,
         category_id: editCategoryId,
         note: editNote || null,
+        project: editProject || null,
         date: editDate,
         store_id: editStoreId || null,
       };
@@ -312,6 +316,14 @@ export default function DetailScreen() {
           <View style={s.infoRow}>
             <Text style={s.infoLabel}>日期</Text>
             <Text style={s.infoValue}>{formatDate(detail.date)}</Text>
+          </View>
+
+          <View style={s.divider} />
+
+          {/* Project */}
+          <View style={s.infoRow}>
+            <Text style={s.infoLabel}>项目</Text>
+            <Text style={s.infoValue}>{detail.project || '无'}</Text>
           </View>
 
           <View style={s.divider} />
@@ -507,6 +519,18 @@ export default function DetailScreen() {
                       placeholderTextColor="#94A3B8"
                       multiline
                       numberOfLines={3}
+                    />
+                  </View>
+
+                  {/* Project */}
+                  <View>
+                    <Text style={s.fieldLabel}>项目（可选）</Text>
+                    <TextInput
+                      style={s.input}
+                      value={editProject}
+                      onChangeText={setEditProject}
+                      placeholder="如：项目A、采购计划..."
+                      placeholderTextColor="#94A3B8"
                     />
                   </View>
                 </ScrollView>

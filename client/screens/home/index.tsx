@@ -199,16 +199,16 @@ export default function HomeScreen() {
           // Enrich transactions: flatten categories, set is_income, calculate running balance
           let runningBalance = 0;
           for (const txn of processedData) {
-            // Flatten nested categories
-            if (txn.categories) {
-              txn.category_name = txn.categories.name || null;
-              txn.category_icon = txn.categories.icon || null;
-              txn.category_color = txn.categories.color || null;
-            }
+            // Flatten nested categories (with fallback if join returns null)
+            const catData = txn.categories || {};
+            txn.category_name = catData.name || null;
+            txn.category_icon = catData.icon || null;
+            txn.category_color = catData.color || null;
             // Set is_income flag from type
             txn.is_income = txn.type === 'income';
-            // Normalize note field
+            // Normalize fields
             txn.notes = txn.note || txn.notes || '';
+            txn.project = txn.project || '';
 
             // Calculate running balance
             const amount = Number(txn.amount) || 0;
@@ -399,11 +399,16 @@ export default function HomeScreen() {
             <Text style={styles.itemTitle} numberOfLines={1}>
               {item.category_name || "未分类"}
             </Text>
-            {item.notes && (
+            {item.project ? (
+              <Text style={styles.itemProject} numberOfLines={1}>
+                {item.project}
+              </Text>
+            ) : null}
+            {item.notes ? (
               <Text style={styles.itemNote} numberOfLines={1}>
                 {item.notes}
               </Text>
-            )}
+            ) : null}
           </View>
         </View>
       </View>
@@ -1032,6 +1037,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: COLORS.textSecondary,
     marginTop: 1,
+  },
+  itemProject: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginTop: 1,
+    fontStyle: 'italic',
   },
 
   // Amount cells

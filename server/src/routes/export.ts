@@ -25,14 +25,32 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
         .eq('role', 'child');
       const subIds = (profiles || []).map((p: any) => p.id);
       visibleIds = [userId, ...subIds];
+    } else {
+      // Child account: also see parent's and siblings' approved transactions
+      if (parentUserId) {
+        const { data: siblingProfiles } = await client
+          .from('user_profiles')
+          .select('id')
+          .eq('parent_user_id', parentUserId)
+          .eq('role', 'child');
+        const siblingIds = (siblingProfiles || []).map((p: any) => p.id);
+        visibleIds = [parentUserId, userId, ...siblingIds.filter(id => id !== userId)];
+      }
     }
 
     let query = client
       .from("transactions")
-      .select("id, amount, type, category_id, note, date, store_id, categories(name), stores(name)")
-      .eq("status", "approved")
+      .select("id, amount, type, category_id, note, project, date, store_id, categories(name), stores(name)")
       .in("user_id", visibleIds)
       .order("date", { ascending: true });
+
+    // For child accounts: own pending + all approved
+    // For parent accounts: only approved
+    if (role === 'parent') {
+      query = query.eq("status", "approved");
+    } else {
+      query = query.or(`and(user_id.eq.${userId}),and(status.eq.approved,user_id.neq.${userId})`);
+    }
 
     if (start_date) {
       query = query.gte("date", start_date as string);
@@ -117,8 +135,8 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
         date: dateStr,
         seq: seq,
         store: store?.name || "",
-        category: "",
-        project: "",
+        category: cat?.name || "",
+        project: t.project || "",
         income: isIncome ? amount : "",
         expense: !isIncome ? amount : "",
         balance: balance,
