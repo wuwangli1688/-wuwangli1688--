@@ -389,8 +389,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
       .from("transactions")
       .select("id, amount, type, category_id, note, project, date, status, user_id, store_id, created_at, reviewed_at, categories(name, icon, color), stores(name)", { count: "exact" })
       .in("user_id", visibleIds)
-      .order("created_at", { ascending: true })
-      .order("date", { ascending: false });
+      .order("created_at", { ascending: true });
 
     // Parent accounts: only approved transactions
     // Child accounts: own pending + all approved (parent + siblings)

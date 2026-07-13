@@ -187,16 +187,9 @@ export default function HomeScreen() {
 
         // Only update if this is still the latest request
         if (currentId === requestId.current) {
-          // Process transactions: sort income first, then expense, calculate running balance
+          // Process transactions: use backend order (by created_at), calculate running balance
           const rawData = listData.data || [];
-          const processedData = [...rawData].sort((a, b) => {
-            // Income first, then expense
-            if (a.type !== b.type) {
-              return a.type === 'income' ? -1 : 1;
-            }
-            // Within same type, sort by date ascending
-            return (a.date || '').localeCompare(b.date || '');
-          });
+          const processedData = [...rawData];
 
           // Enrich transactions: flatten categories, set is_income, calculate running balance
           let runningBalance = 0;
