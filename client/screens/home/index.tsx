@@ -206,6 +206,9 @@ export default function HomeScreen() {
             txn.category_name = catData.name || null;
             txn.category_icon = catData.icon || null;
             txn.category_color = catData.color || null;
+            // Flatten store name
+            const storeData = txn.stores || {};
+            txn.store_name = storeData.name || '';
             // Set is_income flag from type
             txn.is_income = txn.type === 'income';
             // Normalize fields
@@ -368,6 +371,8 @@ export default function HomeScreen() {
     }
   };
 
+  const isAllStores = !selectedStoreId;
+
   // Transaction rendering
   const renderTransaction = useCallback(({ item, index }: { item: any; index: number }) => (
     <TouchableOpacity
@@ -378,6 +383,13 @@ export default function HomeScreen() {
       <View style={[styles.colSerial, styles.colCenter]}>
         <Text style={styles.serialText}>{index + 1}</Text>
       </View>
+      {isAllStores && (
+        <View style={[styles.colStoreName, styles.colCenter]}>
+          <Text style={styles.storeNameText} numberOfLines={1}>
+            {item.store_name || ""}
+          </Text>
+        </View>
+      )}
       <View style={[styles.colDate, styles.colCenter]}>
         <Text style={styles.dateText}>
           {item.date ? item.date.substring(0, 10) : "-"}
@@ -425,13 +437,18 @@ export default function HomeScreen() {
         )}
       </View>
     </TouchableOpacity>
-  ), [router]);
+  ), [router, isAllStores]);
 
   const renderTableHeader = () => (
     <View style={styles.tableHeader}>
       <Text style={[styles.headerText, styles.colSerial, styles.colCenter]}>
         序号
       </Text>
+      {isAllStores && (
+        <Text style={[styles.headerText, styles.colStoreName, styles.colCenter]}>
+          店铺
+        </Text>
+      )}
       <Text style={[styles.headerText, styles.colDate, styles.colCenter]}>
         日期
       </Text>
@@ -469,6 +486,11 @@ export default function HomeScreen() {
         <Text style={[styles.cfLabel, styles.colSerial, styles.colCenter]}>
           -
         </Text>
+        {isAllStores && (
+          <Text style={[styles.cfLabel, styles.colStoreName, styles.colCenter]}>
+            -
+          </Text>
+        )}
         <Text style={[styles.cfText, styles.colDate, styles.colCenter]}>
           -
         </Text>
@@ -496,6 +518,11 @@ export default function HomeScreen() {
         <Text style={[styles.footerLabel, styles.colSerial, styles.colCenter]}>
           -
         </Text>
+        {isAllStores && (
+          <Text style={[styles.footerLabel, styles.colStoreName, styles.colCenter]}>
+            -
+          </Text>
+        )}
         <Text style={[styles.footerText, styles.colDate, styles.colCenter]}>
           -
         </Text>
@@ -965,6 +992,7 @@ const styles = StyleSheet.create({
 
   // Column widths
   colSerial: { width: 32 },
+  colStoreName: { width: 56 },
   colDate: { width: 46 },
   colItem: { flex: 1, paddingHorizontal: 4 },
   colAmount: { width: 64 },
@@ -975,6 +1003,11 @@ const styles = StyleSheet.create({
   serialText: {
     fontSize: 12,
     fontWeight: "600",
+    color: COLORS.textSecondary,
+  },
+  storeNameText: {
+    fontSize: 11,
+    fontWeight: "500",
     color: COLORS.textSecondary,
   },
   dateText: {
