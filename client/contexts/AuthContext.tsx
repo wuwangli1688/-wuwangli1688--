@@ -244,11 +244,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (state.user) {
       await fetchProfile(state.user.id);
     }
-  };
+  }, [state.user, fetchProfile]);
 
   const resetPasswordRequest = async (account: string) => {
     try {
