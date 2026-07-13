@@ -35,7 +35,7 @@ interface Summary {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, role, role_title, email, signOut, refreshProfile } = useAuth();
+  const { user, role, role_title, email, pendingCount, signOut, refreshProfile } = useAuth();
 
 // Derive account name from email
 const accountName = email
@@ -57,7 +57,6 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
   const [totalCount, setTotalCount] = useState(0);
-  const [pendingCount, setPendingCount] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [caching, setCaching] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -116,19 +115,6 @@ function compareVersions(a: string, b: string): number {
     }
   }, []);
 
-  const fetchPendingCount = useCallback(async () => {
-    if (role !== "parent") return;
-    try {
-      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/pending`);
-      if (res.ok) {
-        const data = await res.json();
-        setPendingCount(data.length);
-      }
-    } catch {
-      // silently fail
-    }
-  }, [role]);
-
   const fetchStores = useCallback(async () => {
     setLoadingStores(true);
     try {
@@ -155,9 +141,9 @@ function compareVersions(a: string, b: string): number {
   useFocusEffect(
     useCallback(() => {
       fetchAllTimeStats();
-      fetchPendingCount();
+      refreshProfile();
       fetchStores();
-    }, [fetchAllTimeStats, fetchPendingCount, fetchStores])
+    }, [fetchAllTimeStats, refreshProfile, fetchStores])
   );
 
   const handleSelectStore = async (storeId: string | null) => {
@@ -489,18 +475,18 @@ function compareVersions(a: string, b: string): number {
           <View style={styles.actionsSection}>
             <Text style={styles.actionsTitle}>账号管理</Text>
 
-            {pendingCount > 0 && (
-              <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/review")}>
+            <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/review")}>
                 <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
                   <FontAwesome6 name="clipboard-check" size={16} color="#D97706" />
                 </View>
                 <Text style={styles.actionText}>待审核记录</Text>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{pendingCount}</Text>
-                </View>
+                {pendingCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{pendingCount}</Text>
+                  </View>
+                )}
                 <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
               </TouchableOpacity>
-            )}
 
             <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/account-manage")}>
               <View style={[styles.actionIcon, { backgroundColor: "#EDE9FE" }]}>

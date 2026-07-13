@@ -27,6 +27,7 @@ interface AuthState {
   role: string | null;
   role_title: string | null;
   parentUserId: string | null;
+  pendingCount: number;
 }
 
 interface AuthContextType extends AuthState {
@@ -47,6 +48,7 @@ const AuthContext = createContext<AuthContextType>({
   role: null,
   role_title: null,
   parentUserId: null,
+  pendingCount: 0,
   isAuthenticated: false,
   email: null,
   signIn: async () => ({}),
@@ -69,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role: null,
     role_title: null,
     parentUserId: null,
+    pendingCount: 0,
   });
 
   const fetchProfile = useCallback(async (userId: string) => {
@@ -88,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: profile.role || 'parent',
           role_title: profile.role_title || '',
           parentUserId: profile.parentUserId || null,
+          pendingCount: profile.pending_count || 0,
         }));
       }
     } catch {
@@ -113,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             role: null,
             role_title: null,
             parentUserId: null,
+            pendingCount: 0,
           });
           await fetchProfile(session.user.id);
         } else {
@@ -138,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 role: null,
                 role_title: null,
                 parentUserId: null,
+                pendingCount: 0,
               });
             }
           }
@@ -176,6 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: null,
         role_title: null,
         parentUserId: null,
+        pendingCount: 0,
       });
       await fetchProfile(data.session.user.id);
     }
@@ -202,6 +209,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: null,
         role_title: null,
         parentUserId: null,
+        pendingCount: 0,
       });
 
       // Create profile as parent
@@ -232,6 +240,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: null,
       role_title: null,
       parentUserId: null,
+      pendingCount: 0,
     });
   };
 

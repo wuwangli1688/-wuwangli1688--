@@ -21,11 +21,11 @@ interface PendingTransaction {
   type: string;
   note: string;
   date: string;
-  categoryName: string;
-  categoryIcon: string;
-  categoryColor: string;
-  submittedBy: string;
-  submittedByEmail: string;
+  categories?: { name: string; icon: string; color: string };
+  stores?: { name: string };
+  user_profiles?: { display_name: string };
+  status: string;
+  created_at: string;
 }
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
@@ -43,8 +43,9 @@ export default function ReviewScreen() {
         `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/pending`
       );
       if (res.ok) {
-        const data = await res.json();
-        setPendingList(data);
+        const json = await res.json();
+        const list = json.data || [];
+        setPendingList(list);
       }
     } catch {
       // silently fail
@@ -157,17 +158,17 @@ export default function ReviewScreen() {
           renderItem={({ item }) => (
             <View style={s.card}>
               <View style={s.cardTop}>
-                <View style={[s.categoryDot, { backgroundColor: item.categoryColor + '20' }]}>
+                <View style={[s.categoryDot, { backgroundColor: (item.categories?.color || '#6B7280') + '20' }]}>
                   <FontAwesome6
-                    name={item.categoryIcon as any}
+                    name={(item.categories?.icon || 'circle') as any}
                     size={16}
-                    color={item.categoryColor}
+                    color={item.categories?.color || '#6B7280'}
                   />
                 </View>
                 <View style={s.cardInfo}>
-                  <Text style={s.cardCategory}>{item.categoryName}</Text>
+                  <Text style={s.cardCategory}>{item.categories?.name || '未分类'}</Text>
                   <Text style={s.cardMeta}>
-                    {item.submittedByEmail} · {formatDate(item.date)}
+                    {item.user_profiles?.display_name || '未知'} · {formatDate(item.date)}
                   </Text>
                 </View>
                 <Text

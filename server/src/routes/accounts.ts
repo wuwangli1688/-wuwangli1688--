@@ -607,7 +607,9 @@ router.get('/pending', requireParent, async (req: AuthenticatedRequest, res: Res
       .from('transactions')
       .select(`
         *,
-        user_profiles!transactions_user_id_fkey (display_name)
+        user_profiles!transactions_user_id_fkey (display_name, role_title),
+        categories (name, icon, color),
+        stores (name)
       `)
       .eq('status', 'pending')
       .in('user_id', subIds)
@@ -653,7 +655,7 @@ router.post('/review/:transactionId', requireParent, async (req: AuthenticatedRe
     const { data: profile } = await serviceClient
       .from('user_profiles')
       .select('*')
-      .eq('id', txn.userId)
+      .eq('id', txn.user_id)
       .eq('parent_user_id', parentId)
       .single();
 
@@ -667,8 +669,8 @@ router.post('/review/:transactionId', requireParent, async (req: AuthenticatedRe
       .from('transactions')
       .update({
         status: newStatus,
-        reviewedBy: parentId,
-        reviewedAt: new Date().toISOString(),
+        reviewed_by: parentId,
+        reviewed_at: new Date().toISOString(),
       })
       .eq('id', transactionId);
 
@@ -729,13 +731,36 @@ router.get('/me', async (req: AuthenticatedRequest, res: Response) => {
     const client = getSupabaseClient(token);
     const { data: { user } } = await client.auth.getUser();
 
+    const role = profile?.role || 'parent';
+
+    let pendingCount = 0;
+    if (role === 'parent') {
+      // Count pending transactions from sub-accounts
+      const { data: subProfiles } = await serviceClient
+        .from('user_profiles')
+        .select('id')
+        .eq('parent_user_id', userId)
+        .eq('role', 'child');
+
+      const subIds = (subProfiles || []).map(p => p.id);
+      if (subIds.length > 0) {
+        const { count } = await serviceClient
+          .from('transactions')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending')
+          .in('user_id', subIds);
+        pendingCount = count || 0;
+      }
+    }
+
     return res.json({
       id: userId,
       email: user?.email || '',
       displayName: profile?.display_name || user?.user_metadata?.display_name || '',
-      role: profile?.role || 'parent',
+      role,
       role_title: profile?.role_title || '',
       parentUserId: profile?.parent_user_id || null,
+      pending_count: pendingCount,
     });
   } catch (error) {
     console.error('Get me error:', error);

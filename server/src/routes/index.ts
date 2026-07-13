@@ -351,8 +351,9 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
 
     let query = client
       .from("transactions")
-      .select("id, amount, type, category_id, note, date, status, user_id, store_id, created_at, categories(name, icon, color), stores(name)", { count: "exact" })
+      .select("id, amount, type, category_id, note, date, status, user_id, store_id, created_at, reviewed_at, categories(name, icon, color), stores(name)", { count: "exact" })
       .in("user_id", visibleIds)
+      .order("reviewed_at", { ascending: false })
       .order("date", { ascending: false });
 
     // Parent accounts: only approved transactions
