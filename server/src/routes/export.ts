@@ -56,7 +56,10 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
       query = query.gte("date", start_date as string);
     }
     if (end_date) {
-      query = query.lte("date", end_date as string);
+      // date column is timestamptz, use lt with next day to include all times
+      const d = new Date((end_date as string) + 'T00:00:00Z');
+      d.setDate(d.getDate() + 1);
+      query = query.lt("date", d.toISOString());
     }
     if (store_id) {
       query = query.eq("store_id", store_id as string);
