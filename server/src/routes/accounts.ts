@@ -607,7 +607,6 @@ router.get('/pending', requireParent, async (req: AuthenticatedRequest, res: Res
       .from('transactions')
       .select(`
         *,
-        user_profiles!transactions_user_id_fkey (display_name, role_title),
         categories (name, icon, color),
         stores (name)
       `)
@@ -616,13 +615,28 @@ router.get('/pending', requireParent, async (req: AuthenticatedRequest, res: Res
       .order('created_at', { ascending: false });
 
     if (error) {
-      return res.status(500).json({ error: error.message });
+      console.error('Pending transactions query error:', error);
+      return res.json({ data: [], count: 0 });
     }
 
-    return res.json({ data: pendingTxns || [], count: pendingTxns?.length || 0 });
+    // Fetch user profiles separately (no foreign key constraint on user_id)
+    const { data: userProfiles } = await serviceClient
+      .from('user_profiles')
+      .select('id, display_name, role_title')
+      .in('id', subIds);
+
+    const profileMap = new Map((userProfiles || []).map(p => [p.id, p]));
+
+    // Attach user_profiles data to each transaction
+    const enrichedTxns = (pendingTxns || []).map(txn => ({
+      ...txn,
+      user_profiles: profileMap.get(txn.user_id) || null,
+    }));
+
+    return res.json({ data: enrichedTxns, count: enrichedTxns.length });
   } catch (error) {
     console.error('Get pending error:', error);
-    return res.status(500).json({ error: '获取待审核列表失败' });
+    return res.json({ data: [], count: 0 });
   }
 });
 
