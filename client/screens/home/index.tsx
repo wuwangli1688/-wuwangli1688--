@@ -185,8 +185,43 @@ export default function HomeScreen() {
 
         // Only update if this is still the latest request
         if (currentId === requestId.current) {
+          // Process transactions: sort income first, then expense, calculate running balance
+          const rawData = listData.data || [];
+          const processedData = [...rawData].sort((a, b) => {
+            // Income first, then expense
+            if (a.type !== b.type) {
+              return a.type === 'income' ? -1 : 1;
+            }
+            // Within same type, sort by date ascending
+            return (a.date || '').localeCompare(b.date || '');
+          });
+
+          // Enrich transactions: flatten categories, set is_income, calculate running balance
+          let runningBalance = 0;
+          for (const txn of processedData) {
+            // Flatten nested categories
+            if (txn.categories) {
+              txn.category_name = txn.categories.name || null;
+              txn.category_icon = txn.categories.icon || null;
+              txn.category_color = txn.categories.color || null;
+            }
+            // Set is_income flag from type
+            txn.is_income = txn.type === 'income';
+            // Normalize note field
+            txn.notes = txn.note || txn.notes || '';
+
+            // Calculate running balance
+            const amount = Number(txn.amount) || 0;
+            if (txn.is_income) {
+              runningBalance += amount;
+            } else {
+              runningBalance -= amount;
+            }
+            txn.balance = runningBalance;
+          }
+
           setMonthData({
-            data: listData.data || [],
+            data: processedData,
             pagination: listData.pagination,
             total_income: Number(summaryData.total_income) || 0,
             total_expense: Number(summaryData.total_expense) || 0,
@@ -343,7 +378,7 @@ export default function HomeScreen() {
       </View>
       <View style={[styles.colDate, styles.colCenter]}>
         <Text style={styles.dateText}>
-          {item.date ? item.date.substring(5) : "-"}
+          {item.date ? item.date.substring(0, 10) : "-"}
         </Text>
       </View>
       <View style={styles.colItem}>
