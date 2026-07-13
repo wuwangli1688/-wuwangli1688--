@@ -86,9 +86,10 @@ export default function HomeScreen() {
   const router = useSafeRouter();
   const { user, email, role } = useAuth();
   const today = new Date();
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState<Date | null>(null);
-  const [multiDay, setMultiDay] = useState(false);
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const [startDate, setStartDate] = useState(monthStart);
+  const [endDate, setEndDate] = useState<Date | null>(today);
+  const [multiDay, setMultiDay] = useState(true);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [monthData, setMonthData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
