@@ -382,34 +382,20 @@ export default function HomeScreen() {
         </Text>
       </View>
       <View style={styles.colItem}>
-        <View style={styles.itemRow}>
-          <View
-            style={[
-              styles.catIconWrap,
-              { backgroundColor: `${item.category_color || "#8B7E6E"}20` },
-            ]}
-          >
-            <FontAwesome6
-              name={item.category_icon || "circle"}
-              size={12}
-              color={item.category_color || "#8B7E6E"}
-            />
-          </View>
-          <View style={styles.itemTextWrap}>
-            <Text style={styles.itemTitle} numberOfLines={1}>
-              {item.category_name || "未分类"}
+        <View style={styles.itemCol}>
+          <Text style={styles.itemTitle} numberOfLines={1}>
+            {item.category_name || "未分类"}
+          </Text>
+          {item.project ? (
+            <Text style={styles.itemProject} numberOfLines={1}>
+              {item.project}
             </Text>
-            {item.project ? (
-              <Text style={styles.itemProject} numberOfLines={1}>
-                {item.project}
-              </Text>
-            ) : null}
-            {item.notes ? (
-              <Text style={styles.itemNote} numberOfLines={1}>
-                {item.notes}
-              </Text>
-            ) : null}
-          </View>
+          ) : null}
+          {item.notes ? (
+            <Text style={styles.itemNote} numberOfLines={1}>
+              {item.notes}
+            </Text>
+          ) : null}
         </View>
       </View>
       <View style={[styles.colAmount, styles.colRight]}>
@@ -996,19 +982,7 @@ const styles = StyleSheet.create({
   },
 
   // Item
-  itemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  catIconWrap: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  itemTextWrap: {
+  itemCol: {
     flex: 1,
   },
   itemTitle: {
