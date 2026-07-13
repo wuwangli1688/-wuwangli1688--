@@ -102,6 +102,7 @@ export default function HomeScreen() {
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [selectedStoreName, setSelectedStoreName] = useState("全部店铺");
   const isInitialLoad = useRef(true);
+  const requestId = useRef(0);
   const [storeModalVisible, setStoreModalVisible] = useState(false);
 
   // Export state
@@ -142,11 +143,11 @@ export default function HomeScreen() {
 
   const fetchMonthData = useCallback(
     async (year: number, month: number) => {
+      const currentId = ++requestId.current;
       try {
         setLoading(isInitialLoad.current);
         isInitialLoad.current = false;
         setError(null);
-        // authFetch is already imported at top
 
         const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
         const lastDay = new Date(year, month, 0).getDate();
@@ -182,18 +183,25 @@ export default function HomeScreen() {
           summaryData = s.data || summaryData;
         }
 
-        setMonthData({
-          data: listData.data || [],
-          pagination: listData.pagination,
-          total_income: Number(summaryData.total_income) || 0,
-          total_expense: Number(summaryData.total_expense) || 0,
-          balance: Number(summaryData.balance) || 0,
-        });
+        // Only update if this is still the latest request
+        if (currentId === requestId.current) {
+          setMonthData({
+            data: listData.data || [],
+            pagination: listData.pagination,
+            total_income: Number(summaryData.total_income) || 0,
+            total_expense: Number(summaryData.total_expense) || 0,
+            balance: Number(summaryData.balance) || 0,
+          });
+        }
       } catch (e: any) {
-        setError(e.message || "网络错误");
+        if (currentId === requestId.current) {
+          setError(e.message || "网络错误");
+        }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (currentId === requestId.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [selectedStoreId]
@@ -324,7 +332,7 @@ export default function HomeScreen() {
   };
 
   // Transaction rendering
-  const renderTransaction = ({ item, index }: { item: any; index: number }) => (
+  const renderTransaction = useCallback(({ item, index }: { item: any; index: number }) => (
     <TouchableOpacity
       style={styles.txRow}
       activeOpacity={0.7}
@@ -389,7 +397,7 @@ export default function HomeScreen() {
         )}
       </View>
     </TouchableOpacity>
-  );
+  ), [router]);
 
   const renderTableHeader = () => (
     <View style={styles.tableHeader}>
