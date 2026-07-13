@@ -1,6 +1,6 @@
 {
-  "version": "1.0.8",
+  "version": "1.0.9",
   "minVersion": "1.0.0",
-  "releaseNotes": "优化：首页分类/项目显示、店铺删除同步、子账号数据可见性、交易删除逻辑、版本更新检查",
+  "releaseNotes": "优化：首页日期导航重构（可选年/月/日、多日模式、翻页箭头移至表格内）",
   "forceUpdate": false
 }

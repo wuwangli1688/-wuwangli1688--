@@ -26,13 +26,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { authFetch } from "@/lib/supabase";
+import DatePickerModal from "@/components/DatePickerModal";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
-
-const monthLabels = [
-  "一月", "二月", "三月", "四月", "五月", "六月",
-  "七月", "八月", "九月", "十月", "十一月", "十二月",
-];
 
 const COLORS = {
   bg: "#FDFCF9",
@@ -90,8 +86,10 @@ export default function HomeScreen() {
   const router = useSafeRouter();
   const { user, email, role } = useAuth();
   const today = new Date();
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [multiDay, setMultiDay] = useState(false);
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [monthData, setMonthData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -144,21 +142,22 @@ export default function HomeScreen() {
   );
 
   const fetchMonthData = useCallback(
-    async (year: number, month: number) => {
+    async (sDate: Date, eDate: Date | null) => {
       const currentId = ++requestId.current;
       try {
         setLoading(isInitialLoad.current);
         isInitialLoad.current = false;
         setError(null);
 
-        const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
-        const lastDay = new Date(year, month, 0).getDate();
-        const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+        const start = `${sDate.getFullYear()}-${String(sDate.getMonth() + 1).padStart(2, "0")}-${String(sDate.getDate()).padStart(2, "0")}`;
+        const end = eDate
+          ? `${eDate.getFullYear()}-${String(eDate.getMonth() + 1).padStart(2, "0")}-${String(eDate.getDate()).padStart(2, "0")}`
+          : start;
 
         // Fetch transaction list
         const listParams = new URLSearchParams({
-          start_date: startDate,
-          end_date: endDate,
+          start_date: start,
+          end_date: end,
         });
         if (selectedStoreId) {
           listParams.append("store_id", selectedStoreId);
@@ -249,27 +248,32 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      fetchMonthData(viewYear, viewMonth);
-    }, [viewYear, viewMonth, fetchMonthData])
+      fetchMonthData(startDate, endDate);
+    }, [startDate, endDate, fetchMonthData])
   );
 
-  const changeMonth = (delta: number) => {
-    let newMonth = viewMonth + delta;
-    let newYear = viewYear;
-    if (newMonth > 12) {
-      newMonth = 1;
-      newYear += 1;
-    } else if (newMonth < 1) {
-      newMonth = 12;
-      newYear -= 1;
+  const changeDate = (delta: number) => {
+    const newDate = new Date(startDate);
+    newDate.setDate(newDate.getDate() + delta);
+    setStartDate(newDate);
+    if (endDate) {
+      // In multi-day mode, shift the entire range
+      const newEnd = new Date(endDate);
+      newEnd.setDate(newEnd.getDate() + delta);
+      setEndDate(newEnd);
     }
-    setViewYear(newYear);
-    setViewMonth(newMonth);
+  };
+
+  const handleDateConfirm = (sDate: Date, eDate: Date | null, isMulti: boolean) => {
+    setStartDate(sDate);
+    setEndDate(eDate);
+    setMultiDay(isMulti);
+    setDatePickerVisible(false);
   };
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchMonthData(viewYear, viewMonth);
+    fetchMonthData(startDate, endDate);
   };
 
   const handleStoreSelect = (store: any) => {
@@ -576,20 +580,28 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={true}
           ListHeaderComponent={
             <View>
-              {/* Month Selector + Store + Export */}
+              {/* Date Selector + Store + Export */}
               <View style={styles.monthBar}>
                 <TouchableOpacity
                   style={styles.monthArrow}
-                  onPress={() => changeMonth(-1)}
+                  onPress={() => changeDate(-1)}
                 >
                   <FontAwesome6 name="chevron-left" size={16} color="#475569" />
                 </TouchableOpacity>
-                <Text style={styles.monthTitle}>
-                  {today.getFullYear()}年{String(today.getMonth() + 1).padStart(2, "0")}月{String(today.getDate()).padStart(2, "0")}日
-                </Text>
+                <TouchableOpacity
+                  style={{ flex: 1, alignItems: 'center' }}
+                  onPress={() => setDatePickerVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.monthTitle}>
+                    {startDate.getFullYear()}年{String(startDate.getMonth() + 1).padStart(2, "0")}月{String(startDate.getDate()).padStart(2, "0")}日
+                    {multiDay && endDate ? ` - ${endDate.getFullYear()}年${String(endDate.getMonth() + 1).padStart(2, "0")}月${String(endDate.getDate()).padStart(2, "0")}日` : ''}
+                    {multiDay ? ' (多日)' : ''}
+                  </Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.monthArrow}
-                  onPress={() => changeMonth(1)}
+                  onPress={() => changeDate(1)}
                 >
                   <FontAwesome6 name="chevron-right" size={16} color="#475569" />
                 </TouchableOpacity>
@@ -617,7 +629,7 @@ export default function HomeScreen() {
                 <View style={styles.errorBanner}>
                   <Text style={styles.errorText}>{error}</Text>
                   <TouchableOpacity
-                    onPress={() => fetchMonthData(viewYear, viewMonth)}
+                    onPress={() => fetchMonthData(startDate, endDate)}
                   >
                     <Text style={styles.retryText}>重试</Text>
                   </TouchableOpacity>
@@ -830,6 +842,16 @@ export default function HomeScreen() {
           </KeyboardAvoidingView>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* Date Picker Modal */}
+      <DatePickerModal
+        visible={datePickerVisible}
+        startDate={startDate}
+        endDate={endDate}
+        multiDay={multiDay}
+        onConfirm={handleDateConfirm}
+        onClose={() => setDatePickerVisible(false)}
+      />
     </Screen>
   );
 }
