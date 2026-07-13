@@ -5,6 +5,7 @@ import { LogBox, View, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { Provider } from '@/components/Provider';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import UpdateBanner from '@/components/UpdateBanner';
 
 
 import '../global.css';
@@ -91,6 +92,7 @@ export default function RootLayout() {
             <Stack.Screen name="detail" options={{ title: "交易详情" }} />
             <Stack.Screen name="(tabs)" options={{ title: "" }} />
           </Stack>
+          <UpdateBanner />
           <Toast />
         </AuthGate>
       </AuthProvider>

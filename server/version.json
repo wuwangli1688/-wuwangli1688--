@@ -1,0 +1,6 @@
+{
+  "version": "1.0.8",
+  "minVersion": "1.0.0",
+  "releaseNotes": "优化：首页分类/项目显示、店铺删除同步、子账号数据可见性、交易删除逻辑、版本更新检查",
+  "forceUpdate": false
+}

@@ -1,9 +1,15 @@
 import express from "express";
 import cors from "cors";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import apiRouter from "./routes/index.js";
 import supabaseConfigRouter from "./routes/supabase-config.js";
 import wechatRouter from "./routes/wechat.js";
 import { getSupabaseClient } from "./storage/database/supabase-client.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 9091;
@@ -70,6 +76,20 @@ app.get('/api/v1/version/check', async (req, res) => {
 // Get current latest version (public, no auth)
 app.get('/api/v1/version/current', async (req, res) => {
   try {
+    // First try to read from version.json (always up-to-date with deployment)
+    const versionPath = path.join(__dirname, '..', 'version.json');
+    if (fs.existsSync(versionPath)) {
+      const versionData = JSON.parse(fs.readFileSync(versionPath, 'utf-8'));
+      return res.json({
+        version: versionData.version,
+        releaseNotes: versionData.releaseNotes || '',
+        downloadUrl: versionData.downloadUrl || '',
+        forceUpdate: versionData.forceUpdate || false,
+        minVersion: versionData.minVersion || '1.0.0',
+      });
+    }
+
+    // Fallback to database
     const supabase = getSupabaseClient();
     const { data: versions, error } = await supabase
       .from('app_versions')
@@ -87,6 +107,7 @@ app.get('/api/v1/version/current', async (req, res) => {
       releaseNotes: latest.release_notes || '',
       downloadUrl: latest.download_url || '',
       forceUpdate: latest.force_update || false,
+      minVersion: latest.min_version || '1.0.0',
     });
   } catch (err) {
     console.error('Version current error:', err);

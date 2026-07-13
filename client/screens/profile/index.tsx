@@ -65,7 +65,7 @@ function compareVersions(a: string, b: string): number {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<"checking" | "ready" | "downloading" | "done">("checking");
   const [updateVersion, setUpdateVersion] = useState("");
-  const APP_VERSION = Constants.expoConfig?.version || "1.0.2";
+  const APP_VERSION = Constants.expoConfig?.version || "1.0.0";
   const [currentVersion, setCurrentVersion] = useState(APP_VERSION);
   const [updateDownloadUrl, setUpdateDownloadUrl] = useState("");
 
@@ -325,10 +325,9 @@ function compareVersions(a: string, b: string): number {
         }, 500);
         return;
       }
-      // 获取本地存储的版本号
-      const storedVersion = await AsyncStorage.getItem("app_version");
-      // 如果服务器版本比本地存储的版本新，则提示更新
-      if (compareVersions(serverVersion, storedVersion || "1.0.2") > 0) {
+      // 使用应用内置版本号作为当前版本（与后端版本号比较）
+      // 服务器版本 > 内置版本 → 有新版本可更新
+      if (compareVersions(serverVersion, APP_VERSION) > 0) {
         setUpdateVersion(serverVersion);
         setUpdateDownloadUrl(versionData.download_url || "");
         setUpdateStatus("ready");
