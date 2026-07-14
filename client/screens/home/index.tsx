@@ -395,16 +395,16 @@ export default function HomeScreen() {
       </View>
       <View style={styles.colItem}>
         <View style={styles.itemCol}>
-          <Text style={styles.itemTitle} numberOfLines={1}>
+          <Text style={styles.itemTitle}>
             {item.category_name || "未分类"}
           </Text>
           {item.project ? (
-            <Text style={styles.itemProject} numberOfLines={1}>
+            <Text style={styles.itemProject}>
               {item.project}
             </Text>
           ) : null}
           {item.notes ? (
-            <Text style={styles.itemNote} numberOfLines={1}>
+            <Text style={styles.itemNote}>
               {item.notes}
             </Text>
           ) : null}
@@ -946,7 +946,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: COLORS.headerBg,
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     borderBottomWidth: 2,
     borderBottomColor: COLORS.border,
     borderTopWidth: 1,
@@ -967,7 +967,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: COLORS.carryForwardBg,
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -999,20 +999,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: COLORS.tableBg,
     paddingVertical: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     borderBottomWidth: 0.5,
     borderBottomColor: COLORS.border,
-    minHeight: 44,
-    alignItems: "center",
+    alignItems: "flex-start",
   },
 
   // Column widths
-  colSerial: { width: 32 },
-  colStoreName: { width: 56 },
-  colDate: { width: 46 },
+  colSerial: { width: 24 },
+  colStoreName: { width: 48 },
+  colDate: { width: 58 },
   colItem: { flex: 1, paddingHorizontal: 4 },
-  colAmount: { width: 64 },
-  colBalance: { width: 72 },
+  colAmount: { width: 58 },
+  colBalance: { width: 62 },
   colCenter: { alignItems: "center" },
   colRight: { alignItems: "flex-end" },
 
@@ -1102,7 +1101,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: COLORS.footerBg,
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     borderTopWidth: 2,
     borderTopColor: COLORS.border,
   },
