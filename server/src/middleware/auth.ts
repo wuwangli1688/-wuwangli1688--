@@ -5,6 +5,7 @@ export interface AuthenticatedRequest extends Request {
   userId?: string;
   userRole?: string;
   parentUserId?: string | null;
+  userPermissions?: string[];
 }
 
 /**
@@ -36,7 +37,7 @@ export async function authMiddleware(
     const serviceClient = getSupabaseClient();
     let { data: profile } = await serviceClient
       .from('user_profiles')
-      .select('role, parent_user_id')
+      .select('role, parent_user_id, permissions')
       .eq('id', user.id)
       .single();
 
@@ -55,7 +56,7 @@ export async function authMiddleware(
       if (insertError) {
         console.error('[Auth] Failed to auto-create profile:', insertError);
       } else {
-        profile = { role: 'parent', parent_user_id: null };
+        profile = { role: 'parent', parent_user_id: null, permissions: ['create', 'modify', 'delete'] };
         console.log(`[Auth] Profile auto-created for user ${user.id}`);
       }
     }
@@ -63,6 +64,7 @@ export async function authMiddleware(
     req.userId = user.id;
     req.userRole = profile?.role ?? 'parent';
     req.parentUserId = profile?.parent_user_id ?? null;
+    req.userPermissions = profile?.permissions ?? ['create', 'modify', 'delete'];
 
     next();
   } catch (error) {

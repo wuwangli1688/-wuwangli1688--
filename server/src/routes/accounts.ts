@@ -304,7 +304,7 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
 // POST /api/v1/accounts/sub-accounts - Create sub-account (parent only)
 router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { username, password, store_ids, role_title } = req.body;
+    const { username, password, store_ids, role_title, permissions } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: '请提供用户名和密码' });
     }
@@ -349,6 +349,7 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
             await serviceClient.from('user_profiles').update({
               display_name: username,
               role_title: role_title || '',
+              permissions: permissions || ['create', 'modify', 'delete'],
             }).eq('id', existingUser.id);
 
             // Update store permissions if provided
@@ -388,6 +389,7 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
       parent_user_id: parentId,
       display_name: username,
       role_title: role_title || '',
+      permissions: permissions || ['create', 'modify', 'delete'],
     });
 
     // Grant store permissions if store_ids provided
@@ -461,6 +463,7 @@ router.get('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res
         displayName: profile.display_name || profile.displayName || username || '子账号',
         role: profile.role,
         role_title: profile.role_title || '',
+        permissions: profile.permissions || ['create', 'modify', 'delete'],
         createdAt: profile.created_at || profile.createdAt || new Date().toISOString(),
         store_ids: permissionStoreIds,
       });
@@ -477,7 +480,7 @@ router.get('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res
 router.put('/sub-accounts/:id', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { displayName, password, store_ids, role_title } = req.body;
+    const { displayName, password, store_ids, role_title, permissions } = req.body;
     const parentId = req.userId!;
     const serviceClient = getSupabaseClient();
 
@@ -507,6 +510,14 @@ router.put('/sub-accounts/:id', requireParent, async (req: AuthenticatedRequest,
       await serviceClient
         .from('user_profiles')
         .update({ role_title })
+        .eq('id', id);
+    }
+
+    // Update permissions
+    if (permissions !== undefined) {
+      await serviceClient
+        .from('user_profiles')
+        .update({ permissions })
         .eq('id', id);
     }
 
@@ -610,7 +621,7 @@ router.get('/pending', requireParent, async (req: AuthenticatedRequest, res: Res
         categories (name, icon, color),
         stores (name)
       `)
-      .eq('status', 'pending')
+      .in('status', ['pending', 'pending_delete'])
       .in('user_id', subIds)
       .order('created_at', { ascending: false });
 
@@ -657,8 +668,8 @@ router.post('/review/:transactionId', requireParent, async (req: AuthenticatedRe
     const { data: txn } = await serviceClient
       .from('transactions')
       .select('*')
+      .in('status', ['pending', 'pending_delete'])
       .eq('id', transactionId)
-      .eq('status', 'pending')
       .single();
 
     if (!txn) {
@@ -677,18 +688,66 @@ router.post('/review/:transactionId', requireParent, async (req: AuthenticatedRe
       return res.status(403).json({ error: '无权审核此记录' });
     }
 
-    const newStatus = action === 'approve' ? 'approved' : 'rejected';
+    // Handle pending_delete differently
+    if (txn.status === 'pending_delete') {
+      if (action === 'approve') {
+        // Actually delete the transaction
+        await serviceClient
+          .from('transactions')
+          .delete()
+          .eq('id', transactionId);
+        return res.json({ message: '已删除' });
+      } else {
+        // Reject: restore to approved
+        await serviceClient
+          .from('transactions')
+          .update({
+            status: 'approved',
+            reviewed_by: parentId,
+            reviewed_at: new Date().toISOString(),
+          })
+          .eq('id', transactionId);
+        return res.json({ message: '已拒绝删除，记录已恢复' });
+      }
+    }
 
-    await serviceClient
-      .from('transactions')
-      .update({
-        status: newStatus,
-        reviewed_by: parentId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', transactionId);
+    // Handle pending (create/edit)
+    if (txn.status === 'pending') {
+      if (action === 'reject') {
+        // Check if there's pending_edit_data to revert
+        if (txn.pending_edit_data) {
+          // Revert to old data
+          await serviceClient
+            .from('transactions')
+            .update({
+              ...txn.pending_edit_data,
+              status: 'approved',
+              pending_edit_data: null,
+              reviewed_by: parentId,
+              reviewed_at: new Date().toISOString(),
+            })
+            .eq('id', transactionId);
+          return res.json({ message: '已拒绝，已恢复修改前的数据' });
+        }
+      }
 
-    return res.json({ message: action === 'approve' ? '已通过' : '已拒绝' });
+      // Normal approve/reject for pending
+      const newStatus = action === 'approve' ? 'approved' : 'rejected';
+
+      await serviceClient
+        .from('transactions')
+        .update({
+          status: newStatus,
+          pending_edit_data: null,
+          reviewed_by: parentId,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq('id', transactionId);
+
+      return res.json({ message: action === 'approve' ? '已通过' : '已拒绝' });
+    }
+
+    return res.status(400).json({ error: '未知的审核状态' });
   } catch (error) {
     console.error('Review error:', error);
     return res.status(500).json({ error: '审核操作失败' });

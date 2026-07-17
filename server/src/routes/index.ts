@@ -242,7 +242,7 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
     if (role === 'parent') {
       query = query.eq("status", "approved");
     } else {
-      query = query.or(`and(user_id.eq.${userId}),and(status.eq.approved,user_id.neq.${userId})`);
+      query = query.or(`and(user_id.eq.${userId},status.neq.pending_delete),and(status.eq.approved,user_id.neq.${userId})`);
     }
 
     if (start_date) {
@@ -314,7 +314,7 @@ router.get("/transactions/stats-by-category", async (req: AuthenticatedRequest, 
     if (role === 'parent') {
       query = query.eq("status", "approved");
     } else {
-      query = query.or(`and(user_id.eq.${userId}),and(status.eq.approved,user_id.neq.${userId})`);
+      query = query.or(`and(user_id.eq.${userId},status.neq.pending_delete),and(status.eq.approved,user_id.neq.${userId})`);
     }
 
     if (start_date) {
@@ -398,12 +398,12 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
       .order("created_at", { ascending: true });
 
     // Parent accounts: only approved transactions
-    // Child accounts: own pending + all approved (parent + siblings)
+    // Child accounts: own pending + all approved (parent + siblings), exclude pending_delete
     if (role === 'parent') {
       query = query.eq("status", "approved");
     } else {
-      // Child: own transactions (any status) + all other users' approved transactions
-      query = query.or(`and(user_id.eq.${userId}),and(status.eq.approved,user_id.neq.${userId})`);
+      // Child: own transactions (any status except pending_delete) + all other users' approved transactions
+      query = query.or(`and(user_id.eq.${userId},status.neq.pending_delete),and(status.eq.approved,user_id.neq.${userId})`);
     }
 
     if (type && ["income", "expense"].includes(type as string)) {
@@ -512,6 +512,19 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
       return res.status(400).json({ error: "type must be 'income' or 'expense'" });
     }
 
+    // Check sub-account permissions
+    if (role === 'child') {
+      const { data: profile } = await getSupabaseClient()
+        .from('user_profiles')
+        .select('permissions')
+        .eq('id', userId)
+        .single();
+      const perms = profile?.permissions || [];
+      if (!perms.includes('create')) {
+        return res.status(403).json({ error: "没有录入数据权限" });
+      }
+    }
+
     const status = role === 'child' ? 'pending' : 'approved';
 
     const client = getSupabaseClient();
@@ -546,20 +559,16 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
 // PUT /api/v1/transactions/:id
 router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Child accounts cannot modify records
-    if (req.userRole === 'child') {
-      return res.status(403).json({ error: "子账号不能修改记录" });
-    }
-
     const { id } = req.params;
     const { amount, type, category_id, note, date, project, store_id } = req.body;
     const userId = req.userId!;
+    const role = req.userRole!;
     const client = getSupabaseClient();
 
     // First, find the transaction to check ownership
     const { data: existingTx, error: findError } = await client
       .from("transactions")
-      .select("user_id")
+      .select("user_id, amount, type, category_id, note, project, date, store_id, status")
       .eq("id", id)
       .single();
 
@@ -569,8 +578,61 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
 
     const txOwnerId = existingTx.user_id;
 
+    if (role === 'child') {
+      // Child account: check permissions
+      const { data: profile } = await client
+        .from('user_profiles')
+        .select('permissions')
+        .eq('id', userId)
+        .single();
+      const perms = profile?.permissions || [];
+
+      if (!perms.includes('modify')) {
+        return res.status(403).json({ error: "没有修改数据权限" });
+      }
+
+      // Can only modify own transactions
+      if (txOwnerId !== userId) {
+        return res.status(403).json({ error: "无权修改此记录" });
+      }
+
+      // Save old data for potential revert, then set status to pending
+      const oldData = {
+        amount: existingTx.amount,
+        type: existingTx.type,
+        category_id: existingTx.category_id,
+        note: existingTx.note,
+        project: existingTx.project,
+        date: existingTx.date,
+        store_id: existingTx.store_id,
+      };
+
+      const updateData: Record<string, unknown> = {};
+      if (amount !== undefined) updateData.amount = String(amount);
+      if (type !== undefined) updateData.type = type;
+      if (category_id !== undefined) updateData.category_id = category_id;
+      if (note !== undefined) updateData.note = note || null;
+      if (project !== undefined) updateData.project = project || null;
+      if (date !== undefined) updateData.date = date;
+      if (store_id !== undefined) updateData.store_id = store_id;
+      updateData.status = 'pending';
+      updateData.pending_edit_data = oldData;
+      updateData.reviewed_by = null;
+      updateData.reviewed_at = null;
+
+      const { data, error } = await client
+        .from("transactions")
+        .update(updateData)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw new Error(`修改失败: ${error.message}`);
+      return res.json({ data, message: '已修改，等待主账号审核' });
+    }
+
     // For parent accounts: allow editing if the transaction belongs to them or their sub-accounts
-    if (req.userRole === 'parent' && txOwnerId !== userId) {
+    if (txOwnerId !== userId) {
       // Check if the transaction belongs to a sub-account
       const { data: subProfile } = await client
         .from("user_profiles")
@@ -583,8 +645,6 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
       if (!subProfile) {
         return res.status(403).json({ error: "无权修改此记录" });
       }
-    } else if (txOwnerId !== userId) {
-      return res.status(403).json({ error: "无权修改此记录" });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -614,13 +674,65 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
 // DELETE /api/v1/transactions/:id
 router.delete("/transactions/:id", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    // Child accounts cannot delete records
-    if (req.userRole === 'child') {
-      return res.status(403).json({ error: "子账号不能删除记录" });
+    const { id } = req.params;
+    const userId = req.userId!;
+    const role = req.userRole!;
+    const client = getSupabaseClient();
+
+    // First, find the transaction
+    const { data: existingTx, error: findError } = await client
+      .from("transactions")
+      .select("user_id, status")
+      .eq("id", id)
+      .single();
+
+    if (findError || !existingTx) {
+      return res.status(404).json({ error: "记录不存在" });
     }
 
-    const { id } = req.params;
-    const client = getSupabaseClient();
+    const txOwnerId = existingTx.user_id;
+
+    if (role === 'child') {
+      // Child account: check permissions
+      const { data: profile } = await client
+        .from('user_profiles')
+        .select('permissions')
+        .eq('id', userId)
+        .single();
+      const perms = profile?.permissions || [];
+
+      if (!perms.includes('delete')) {
+        return res.status(403).json({ error: "没有删除数据权限" });
+      }
+
+      // Can only delete own transactions
+      if (txOwnerId !== userId) {
+        return res.status(403).json({ error: "无权删除此记录" });
+      }
+
+      // If transaction is still pending, delete directly
+      if (existingTx.status === 'pending') {
+        const { error } = await client
+          .from("transactions")
+          .delete()
+          .eq("id", id);
+        if (error) throw new Error(`删除失败: ${error.message}`);
+        return res.json({ data: { success: true }, message: '删除成功' });
+      }
+
+      // If approved, set to pending_delete for parent review
+      const { error } = await client
+        .from("transactions")
+        .update({
+          status: 'pending_delete',
+          reviewed_by: null,
+          reviewed_at: null,
+        })
+        .eq("id", id);
+
+      if (error) throw new Error(`请求删除失败: ${error.message}`);
+      return res.json({ data: { success: true }, message: '已提交删除请求，等待主账号审核' });
+    }
 
     // Parent accounts can delete any transaction (including sub-account's)
     const { error } = await client

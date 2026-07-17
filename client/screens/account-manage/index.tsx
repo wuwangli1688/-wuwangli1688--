@@ -28,6 +28,7 @@ interface SubAccount {
   displayName: string;
   role: string;
   role_title?: string;
+  permissions?: string[];
   createdAt: string;
   store_ids?: string[];
 }
@@ -53,6 +54,15 @@ export default function AccountManageScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [storesList, setStoresList] = useState<Store[]>([]);
+  const [formPermissions, setFormPermissions] = useState<string[]>(['create', 'modify', 'delete']);
+
+  const PERMISSION_LABELS: Record<string, string> = {
+    create: '录入数据',
+    modify: '修改数据',
+    delete: '删除数据',
+  };
+
+  const ALL_PERMISSIONS = ['create', 'modify', 'delete'];
 
   const fetchSubAccounts = useCallback(async () => {
     try {
@@ -94,6 +104,7 @@ export default function AccountManageScreen() {
     setFormPassword('');
     setFormRoleTitle(account.role_title || '');
     setSelectedStoreIds(account.store_ids || []);
+    setFormPermissions(account.permissions || ['create', 'modify', 'delete']);
     setModalVisible(true);
   };
 
@@ -103,6 +114,7 @@ export default function AccountManageScreen() {
     setFormPassword('');
     setFormRoleTitle('');
     setSelectedStoreIds([]);
+    setFormPermissions(['create', 'modify', 'delete']);
     setModalVisible(true);
   };
 
@@ -145,6 +157,7 @@ export default function AccountManageScreen() {
         displayName: formUsername.trim(),
         role_title: formRoleTitle.trim(),
         store_ids: selectedStoreIds,
+        permissions: formPermissions,
       };
       if (formPassword) body.password = formPassword;
 
@@ -353,6 +366,38 @@ export default function AccountManageScreen() {
                       </View>
                     </View>
                   )}
+
+                  <View style={s.inputGroup}>
+                    <Text style={s.label}>子账号权限</Text>
+                    <Text style={s.subLabel}>修改和删除数据需要主账号审核</Text>
+                    <View style={s.storeList}>
+                      {ALL_PERMISSIONS.map((perm) => {
+                        const isSelected = formPermissions.includes(perm);
+                        return (
+                          <TouchableOpacity
+                            key={perm}
+                            style={[s.storeItem, isSelected && s.storeItemActive]}
+                            onPress={() => {
+                              setFormPermissions((prev) =>
+                                isSelected
+                                  ? prev.filter((p) => p !== perm)
+                                  : [...prev, perm]
+                              );
+                            }}
+                          >
+                            <View style={[s.storeCheckbox, isSelected && s.storeCheckboxActive]}>
+                              {isSelected && (
+                                <FontAwesome6 name="check" size={12} color="#fff" />
+                              )}
+                            </View>
+                            <Text style={[s.storeName, isSelected && s.storeNameActive]}>
+                              {PERMISSION_LABELS[perm]}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
                 </ScrollView>
 
                 <View style={s.modalFooter}>

@@ -21,11 +21,21 @@ interface PendingTransaction {
   type: string;
   note: string;
   date: string;
+  project?: string;
   categories?: { name: string; icon: string; color: string };
   stores?: { name: string };
   user_profiles?: { display_name: string };
   status: string;
   created_at: string;
+  pending_edit_data?: {
+    amount: string;
+    type: string;
+    category_id: number;
+    note: string | null;
+    project: string | null;
+    date: string;
+    store_id: string | null;
+  };
 }
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
@@ -81,34 +91,39 @@ export default function ReviewScreen() {
     }
   };
 
-  const handleReject = (id: number) => {
-    Alert.alert('拒绝记录', '确定要拒绝这条记录吗？', [
-      { text: '取消', style: 'cancel' },
-      {
-        text: '拒绝',
-        style: 'destructive',
-        onPress: async () => {
-          setProcessingId(id);
-          try {
-            const res = await authFetch(
-              `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/review/${id}`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'reject' }),
+  const handleReject = (item: PendingTransaction) => {
+    const isDelete = item.status === 'pending_delete';
+    Alert.alert(
+      isDelete ? '拒绝删除' : '拒绝记录',
+      isDelete ? '确定要拒绝删除请求，保留该记录吗？' : '确定要拒绝这条记录吗？',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: isDelete ? '保留记录' : '拒绝',
+          style: 'destructive',
+          onPress: async () => {
+            setProcessingId(item.id);
+            try {
+              const res = await authFetch(
+                `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/review/${item.id}`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'reject' }),
+                }
+              );
+              if (res.ok) {
+                fetchPending();
               }
-            );
-            if (res.ok) {
-              fetchPending();
+            } catch {
+              Alert.alert('错误', '网络错误');
+            } finally {
+              setProcessingId(null);
             }
-          } catch {
-            Alert.alert('错误', '网络错误');
-          } finally {
-            setProcessingId(null);
-          }
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   if (role !== 'parent') {
@@ -166,10 +181,29 @@ export default function ReviewScreen() {
                   />
                 </View>
                 <View style={s.cardInfo}>
-                  <Text style={s.cardCategory}>{item.categories?.name || '未分类'}</Text>
+                  <View style={s.cardTitleRow}>
+                    <Text style={s.cardCategory}>{item.categories?.name || '未分类'}</Text>
+                    {item.status === 'pending_delete' ? (
+                      <View style={s.deleteBadge}>
+                        <Text style={s.deleteBadgeText}>删除</Text>
+                      </View>
+                    ) : item.pending_edit_data ? (
+                      <View style={s.editBadge}>
+                        <Text style={s.editBadgeText}>修改</Text>
+                      </View>
+                    ) : (
+                      <View style={s.newBadge}>
+                        <Text style={s.newBadgeText}>新增</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={s.cardMeta}>
                     {item.user_profiles?.display_name || '未知'} · {formatDate(item.date)}
                   </Text>
+                  {item.project ? (
+                    <Text style={s.cardProject}>项目: {item.project}</Text>
+                  ) : null}
+                  {item.note ? <Text style={s.cardNote}>{item.note}</Text> : null}
                 </View>
                 <Text
                   style={[
@@ -180,15 +214,16 @@ export default function ReviewScreen() {
                   {item.type === 'income' ? '+' : '-'}¥{parseFloat(item.amount).toFixed(2)}
                 </Text>
               </View>
-              {item.note ? <Text style={s.cardNote}>{item.note}</Text> : null}
               <View style={s.cardActions}>
                 <TouchableOpacity
                   style={[s.actionBtn, s.rejectBtn]}
-                  onPress={() => handleReject(item.id)}
+                  onPress={() => handleReject(item)}
                   disabled={processingId === item.id}
                 >
                   <FontAwesome6 name="xmark" size={14} color="#EF4444" />
-                  <Text style={s.rejectBtnText}>拒绝</Text>
+                  <Text style={s.rejectBtnText}>
+                    {item.status === 'pending_delete' ? '保留' : '拒绝'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.actionBtn, s.approveBtn]}
@@ -200,7 +235,9 @@ export default function ReviewScreen() {
                   ) : (
                     <>
                       <FontAwesome6 name="check" size={14} color="#fff" />
-                      <Text style={s.approveBtnText}>通过</Text>
+                      <Text style={s.approveBtnText}>
+                        {item.status === 'pending_delete' ? '删除' : '通过'}
+                      </Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -269,4 +306,27 @@ const s = StyleSheet.create({
   rejectBtnText: { fontSize: 14, fontWeight: '500', color: '#EF4444' },
   approveBtn: { backgroundColor: '#2563EB' },
   approveBtnText: { fontSize: 14, fontWeight: '500', color: '#fff' },
+cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardProject: { fontSize: 12, color: '#64748B', marginTop: 3 },
+  deleteBadge: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  deleteBadgeText: { fontSize: 11, fontWeight: '600', color: '#EF4444' },
+  editBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  editBadgeText: { fontSize: 11, fontWeight: '600', color: '#2563EB' },
+  newBadge: {
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  newBadgeText: { fontSize: 11, fontWeight: '600', color: '#10B981' },
 });

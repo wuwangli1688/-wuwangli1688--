@@ -49,7 +49,7 @@ router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => 
     if (role === 'parent') {
       query = query.eq("status", "approved");
     } else {
-      query = query.or(`and(user_id.eq.${userId}),and(status.eq.approved,user_id.neq.${userId})`);
+      query = query.or(`and(user_id.eq.${userId},status.neq.pending_delete),and(status.eq.approved,user_id.neq.${userId})`);
     }
 
     if (start_date) {
