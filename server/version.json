@@ -1,6 +1,6 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minVersion": "1.0.0",
-  "releaseNotes": "新增：子账号权限管理（录入/修改/删除数据权限），修改和删除需主账号审核",
+  "releaseNotes": "新增：登录页记住密码和登录历史功能",
   "forceUpdate": false
 }
