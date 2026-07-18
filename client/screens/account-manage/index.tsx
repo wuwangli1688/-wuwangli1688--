@@ -14,6 +14,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   StyleSheet,
+  Switch,
 } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { useAuth } from '@/contexts/AuthContext';
@@ -31,6 +32,7 @@ interface SubAccount {
   permissions?: string[];
   createdAt: string;
   store_ids?: string[];
+  needs_approval?: boolean;
 }
 
 interface Store {
@@ -55,6 +57,7 @@ export default function AccountManageScreen() {
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
   const [storesList, setStoresList] = useState<Store[]>([]);
   const [formPermissions, setFormPermissions] = useState<string[]>(['create', 'modify', 'delete']);
+  const [formNeedsApproval, setFormNeedsApproval] = useState(true);
 
   const PERMISSION_LABELS: Record<string, string> = {
     create: '录入数据',
@@ -105,6 +108,7 @@ export default function AccountManageScreen() {
     setFormRoleTitle(account.role_title || '');
     setSelectedStoreIds(account.store_ids || []);
     setFormPermissions(account.permissions || ['create', 'modify', 'delete']);
+    setFormNeedsApproval(account.needs_approval !== false);
     setModalVisible(true);
   };
 
@@ -115,6 +119,7 @@ export default function AccountManageScreen() {
     setFormRoleTitle('');
     setSelectedStoreIds([]);
     setFormPermissions(['create', 'modify', 'delete']);
+    setFormNeedsApproval(true);
     setModalVisible(true);
   };
 
@@ -158,6 +163,7 @@ export default function AccountManageScreen() {
         role_title: formRoleTitle.trim(),
         store_ids: selectedStoreIds,
         permissions: formPermissions,
+        needs_approval: formNeedsApproval,
       };
       if (formPassword) body.password = formPassword;
 
@@ -331,6 +337,26 @@ export default function AccountManageScreen() {
                       value={formRoleTitle}
                       onChangeText={setFormRoleTitle}
                     />
+                  </View>
+
+                  {/* 需要审核开关 */}
+                  <View style={s.inputGroup}>
+                    <View style={s.switchRow}>
+                      <View style={s.switchLabel}>
+                        <Text style={s.label}>需要审核</Text>
+                        <Text style={s.subLabel}>
+                          {formNeedsApproval
+                            ? '录入的数据需主账号审核后显示'
+                            : '录入的数据直接显示在列表中'}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={formNeedsApproval}
+                        onValueChange={setFormNeedsApproval}
+                        trackColor={{ false: '#E2E8F0', true: '#818CF8' }}
+                        thumbColor={formNeedsApproval ? '#4F46E5' : '#CBD5E1'}
+                      />
+                    </View>
                   </View>
 
                   {storesList.length > 0 && (
@@ -528,6 +554,16 @@ const s = StyleSheet.create({
     fontSize: 12,
     color: '#94A3B8',
     marginTop: -2,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  switchLabel: {
+    flex: 1,
+    marginRight: 12,
   },
   storeList: {
     gap: 8,

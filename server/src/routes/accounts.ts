@@ -305,7 +305,7 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
 // POST /api/v1/accounts/sub-accounts - Create sub-account (parent only)
 router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { username, password, store_ids, role_title, permissions } = req.body;
+    const { username, password, store_ids, role_title, permissions, needs_approval } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: '请提供用户名和密码' });
     }
@@ -351,6 +351,7 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
               display_name: username,
               role_title: role_title || '',
               permissions: permissions || ['create', 'modify', 'delete'],
+              needs_approval: needs_approval !== undefined ? needs_approval : true,
             }).eq('id', existingUser.id);
 
             // Update store permissions if provided
@@ -391,6 +392,7 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
       display_name: username,
       role_title: role_title || '',
       permissions: permissions || ['create', 'modify', 'delete'],
+      needs_approval: needs_approval !== undefined ? needs_approval : true,
     });
 
     // Grant store permissions if store_ids provided
@@ -465,6 +467,7 @@ router.get('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res
         role: profile.role,
         role_title: profile.role_title || '',
         permissions: profile.permissions || ['create', 'modify', 'delete'],
+        needs_approval: profile.needs_approval !== false,
         createdAt: profile.created_at || profile.createdAt || new Date().toISOString(),
         store_ids: permissionStoreIds,
       });
@@ -481,7 +484,7 @@ router.get('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res
 router.put('/sub-accounts/:id', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { displayName, password, store_ids, role_title, permissions } = req.body;
+    const { displayName, password, store_ids, role_title, permissions, needs_approval } = req.body;
     const parentId = req.userId!;
     const serviceClient = getSupabaseClient();
 
@@ -519,6 +522,14 @@ router.put('/sub-accounts/:id', requireParent, async (req: AuthenticatedRequest,
       await serviceClient
         .from('user_profiles')
         .update({ permissions })
+        .eq('id', id);
+    }
+
+    // Update needs_approval
+    if (needs_approval !== undefined) {
+      await serviceClient
+        .from('user_profiles')
+        .update({ needs_approval })
         .eq('id', id);
     }
 

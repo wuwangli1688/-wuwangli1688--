@@ -512,20 +512,22 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
       return res.status(400).json({ error: "type must be 'income' or 'expense'" });
     }
 
-    // Check sub-account permissions
+    // Check sub-account permissions and approval setting
+    let needsApproval = true;
     if (role === 'child') {
       const { data: profile } = await getSupabaseClient()
         .from('user_profiles')
-        .select('permissions')
+        .select('permissions, needs_approval')
         .eq('id', userId)
         .single();
       const perms = profile?.permissions || [];
       if (!perms.includes('create')) {
         return res.status(403).json({ error: "没有录入数据权限" });
       }
+      needsApproval = profile?.needs_approval !== false;
     }
 
-    const status = role === 'child' ? 'pending' : 'approved';
+    const status = role === 'child' && needsApproval ? 'pending' : 'approved';
 
     const client = getSupabaseClient();
     const insertData: any = {
@@ -582,7 +584,7 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
       // Child account: check permissions
       const { data: profile } = await client
         .from('user_profiles')
-        .select('permissions')
+        .select('permissions, needs_approval')
         .eq('id', userId)
         .single();
       const perms = profile?.permissions || [];
@@ -596,17 +598,6 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
         return res.status(403).json({ error: "无权修改此记录" });
       }
 
-      // Save old data for potential revert, then set status to pending
-      const oldData = {
-        amount: existingTx.amount,
-        type: existingTx.type,
-        category_id: existingTx.category_id,
-        note: existingTx.note,
-        project: existingTx.project,
-        date: existingTx.date,
-        store_id: existingTx.store_id,
-      };
-
       const updateData: Record<string, unknown> = {};
       if (amount !== undefined) updateData.amount = String(amount);
       if (type !== undefined) updateData.type = type;
@@ -615,10 +606,26 @@ router.put("/transactions/:id", async (req: AuthenticatedRequest, res: Response)
       if (project !== undefined) updateData.project = project || null;
       if (date !== undefined) updateData.date = date;
       if (store_id !== undefined) updateData.store_id = store_id;
-      updateData.status = 'pending';
-      updateData.pending_edit_data = oldData;
-      updateData.reviewed_by = null;
-      updateData.reviewed_at = null;
+
+      const needsApproval = profile?.needs_approval !== false;
+      if (needsApproval) {
+        // Save old data for potential revert, then set status to pending
+        const oldData = {
+          amount: existingTx.amount,
+          type: existingTx.type,
+          category_id: existingTx.category_id,
+          note: existingTx.note,
+          project: existingTx.project,
+          date: existingTx.date,
+          store_id: existingTx.store_id,
+        };
+        updateData.status = 'pending';
+        updateData.pending_edit_data = oldData;
+        updateData.reviewed_by = null;
+        updateData.reviewed_at = null;
+      } else {
+        updateData.status = 'approved';
+      }
 
       const { data, error } = await client
         .from("transactions")
@@ -696,7 +703,7 @@ router.delete("/transactions/:id", async (req: AuthenticatedRequest, res: Respon
       // Child account: check permissions
       const { data: profile } = await client
         .from('user_profiles')
-        .select('permissions')
+        .select('permissions, needs_approval')
         .eq('id', userId)
         .single();
       const perms = profile?.permissions || [];
@@ -708,6 +715,18 @@ router.delete("/transactions/:id", async (req: AuthenticatedRequest, res: Respon
       // Can only delete own transactions
       if (txOwnerId !== userId) {
         return res.status(403).json({ error: "无权删除此记录" });
+      }
+
+      const needsApproval = profile?.needs_approval !== false;
+
+      // If no approval needed, delete directly
+      if (!needsApproval) {
+        const { error } = await client
+          .from("transactions")
+          .delete()
+          .eq("id", id);
+        if (error) throw new Error(`删除失败: ${error.message}`);
+        return res.json({ data: { success: true }, message: '删除成功' });
       }
 
       // If transaction is still pending, delete directly
