@@ -36,7 +36,7 @@ interface Summary {
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, role, role_title, email, pendingCount, signOut, refreshProfile } = useAuth();
+  const { user, role, role_title, displayName, email, pendingCount, signOut, refreshProfile } = useAuth();
 
 // Derive account name from email
 const accountName = email
@@ -248,7 +248,7 @@ function compareVersions(a: string, b: string): number {
   };
 
   const handleOpenEditDisplayName = () => {
-    const currentName = (user as any)?.user_metadata?.display_name || email?.split('@')[0] || "";
+    const currentName = displayName || email?.split('@')[0] || "";
     setEditDisplayName(currentName);
     setDisplayNameModalVisible(true);
   };
@@ -417,7 +417,7 @@ function compareVersions(a: string, b: string): number {
             <FontAwesome6 name={role === "parent" ? "user-shield" : "user"} size={36} color="#2563EB" />
           </View>
           <View style={styles.nameRow}>
-            <Text style={styles.profileName}>{(user as any)?.user_metadata?.display_name || email?.split('@')[0] || "我的账本"}</Text>
+            <Text style={styles.profileName}>{displayName || email?.split('@')[0] || "我的账本"}</Text>
             {role === "parent" && (
               <TouchableOpacity style={styles.editNameBtn} onPress={handleOpenEditDisplayName}>
                 <FontAwesome6 name="pen" size={14} color="#64748B" />

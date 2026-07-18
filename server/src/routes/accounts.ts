@@ -275,19 +275,20 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
     if (!displayName || !displayName.trim()) {
       return res.status(400).json({ error: '请输入显示名称' });
     }
-    const client = getSupabaseClient();
     const userId = req.userId!;
+    const serviceClient = getSupabaseClient();
 
-    // Update user_metadata in Supabase Auth
-    const { error: authError } = await client.auth.updateUser({
-      data: { display_name: displayName.trim() },
-    });
+    // Update user_metadata in Supabase Auth using admin API
+    const { error: authError } = await (serviceClient.auth.admin as any).updateUserById(
+      userId,
+      { user_metadata: { display_name: displayName.trim() } }
+    );
     if (authError) {
       return res.status(500).json({ error: '更新失败: ' + authError.message });
     }
 
     // Also update user_profiles table
-    await client.from('user_profiles').upsert({
+    await serviceClient.from('user_profiles').upsert({
       id: userId,
       display_name: displayName.trim(),
     }, { onConflict: 'id' });
