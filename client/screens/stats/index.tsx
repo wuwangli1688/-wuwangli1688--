@@ -11,6 +11,7 @@ import { Screen } from "@/components/Screen";
 import { useFocusEffect } from "expo-router";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeRouter } from "@/hooks/useSafeRouter";
 import { authFetch } from "@/lib/supabase";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
@@ -48,6 +49,7 @@ function getIconName(name: string): keyof typeof FontAwesome6.glyphMap {
 
 export default function StatsScreen() {
   const insets = useSafeAreaInsets();
+  const router = useSafeRouter();
   const [type, setType] = useState<"expense" | "income">("expense");
   const [categoryStats, setCategoryStats] = useState<CategoryStat[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
@@ -150,33 +152,51 @@ export default function StatsScreen() {
             const barWidth = (SCREEN_WIDTH - 100) * (percentage / 100);
 
             return (
-              <View key={item.category_id} style={styles.statItem}>
-                <View style={styles.statHeader}>
-                  <View style={styles.statLeft}>
-                    <View style={[styles.statIcon, { backgroundColor: `${item.color}18` }]}>
-                      <FontAwesome6 name={getIconName(item.icon)} size={14} color={item.color} />
+              <TouchableOpacity
+                key={item.category_id}
+                activeOpacity={0.7}
+                onPress={() =>
+                  router.push("/category-detail", {
+                    category_id: item.category_id,
+                    type,
+                    month: currentMonth,
+                    name: item.name,
+                    color: item.color,
+                    icon: item.icon,
+                  })
+                }
+              >
+                <View style={styles.statItem}>
+                  <View style={styles.statHeader}>
+                    <View style={styles.statLeft}>
+                      <View style={[styles.statIcon, { backgroundColor: `${item.color}18` }]}>
+                        <FontAwesome6 name={getIconName(item.icon)} size={14} color={item.color} />
+                      </View>
+                      <Text style={styles.statName}>{item.name}</Text>
+                      <Text style={styles.statCount}>{item.count}笔</Text>
                     </View>
-                    <Text style={styles.statName}>{item.name}</Text>
-                    <Text style={styles.statCount}>{item.count}笔</Text>
+                    <View style={styles.statRight}>
+                      <View style={styles.amountRow}>
+                        <Text style={styles.statAmount}>¥{parseFloat(item.total).toFixed(2)}</Text>
+                        <FontAwesome6 name="chevron-right" size={12} color="#CBD5E1" style={{ marginLeft: 6 }} />
+                      </View>
+                      <Text style={styles.statPercent}>{percentage.toFixed(1)}%</Text>
+                    </View>
                   </View>
-                  <View style={styles.statRight}>
-                    <Text style={styles.statAmount}>¥{parseFloat(item.total).toFixed(2)}</Text>
-                    <Text style={styles.statPercent}>{percentage.toFixed(1)}%</Text>
+                  <View style={styles.barBackground}>
+                    <View
+                      style={[
+                        styles.barFill,
+                        {
+                          width: Math.max(barWidth, 4),
+                          backgroundColor: item.color,
+                        },
+                      ]}
+                    />
                   </View>
+                  {index < categoryStats.length - 1 && <View style={styles.divider} />}
                 </View>
-                <View style={styles.barBackground}>
-                  <View
-                    style={[
-                      styles.barFill,
-                      {
-                        width: Math.max(barWidth, 4),
-                        backgroundColor: item.color,
-                      },
-                    ]}
-                  />
-                </View>
-                {index < categoryStats.length - 1 && <View style={styles.divider} />}
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
@@ -312,8 +332,7 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
   },
   statRight: {
-    flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
   },
   statAmount: {
     fontSize: 14,
@@ -326,6 +345,10 @@ const styles = StyleSheet.create({
     color: "#64748B",
     minWidth: 40,
     textAlign: "right",
+  },
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   barBackground: {
     height: 6,
