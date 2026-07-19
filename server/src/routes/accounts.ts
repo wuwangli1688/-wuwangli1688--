@@ -853,4 +853,31 @@ router.get('/me', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
+// ============ Submit feedback ============
+// POST /api/v1/accounts/feedback
+router.post('/feedback', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const { content, contact } = req.body;
+
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: '反馈内容不能为空' });
+    }
+
+    const serviceClient = getSupabaseClient();
+    const { error } = await serviceClient.from('feedback').insert({
+      user_id: userId,
+      content: content.trim(),
+      contact: contact || '',
+    });
+
+    if (error) throw error;
+
+    return res.json({ message: '反馈提交成功，感谢您的建议！' });
+  } catch (error) {
+    console.error('Submit feedback error:', error);
+    return res.status(500).json({ error: '提交反馈失败' });
+  }
+});
+
 export default router;

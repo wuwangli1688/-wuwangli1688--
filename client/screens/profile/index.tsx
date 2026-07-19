@@ -908,6 +908,260 @@ function compareVersions(a: string, b: string): number {
         </View>
       </Modal>
 
+      {/* About Modal */}
+      <Modal visible={aboutModalVisible} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} disabled={Platform.OS === "web"}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>
+                    {aboutModalType === "product" ? "产品说明" :
+                     aboutModalType === "privacy" ? "隐私政策" :
+                     aboutModalType === "personal" ? "个人清单" : "第三方清单"}
+                  </Text>
+                  <TouchableOpacity onPress={() => setAboutModalVisible(false)}>
+                    <FontAwesome6 name="xmark" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                  {aboutModalType === "product" && (
+                    <View>
+                      <Text style={styles.aboutTitle}>即时记账</Text>
+                      <Text style={styles.aboutVersion}>v{currentVersion}</Text>
+                      <Text style={styles.aboutSectionTitle}>产品简介</Text>
+                      <Text style={styles.aboutText}>
+                        即时记账是一款专为个体商户、家庭及小型团队打造的日常收支记账应用。提供多角色协同、店铺归属管理、分类统计、数据导出等功能，帮助用户轻松掌握财务状况。
+                      </Text>
+
+                      <Text style={styles.aboutSectionTitle}>核心功能</Text>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>•</Text>
+                        <Text style={styles.aboutFeatureText}><Text style={styles.aboutFeatureBold}>多角色协作</Text>：支持主账号与子账号协同记账，主账号可设置子账号权限（录入/修改/删除），并可开启审核模式，子账号的数据需经主账号确认后方可生效。</Text>
+                      </View>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>•</Text>
+                        <Text style={styles.aboutFeatureText}><Text style={styles.aboutFeatureBold}>店铺管理</Text>：支持多店铺管理，每笔记录可归属到具体店铺，方便按店铺维度查看收支明细。</Text>
+                      </View>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>•</Text>
+                        <Text style={styles.aboutFeatureText}><Text style={styles.aboutFeatureBold}>分类统计</Text>：收入/支出按分类汇总展示，可点击查看明细，月视图直观呈现收支趋势。</Text>
+                      </View>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>•</Text>
+                        <Text style={styles.aboutFeatureText}><Text style={styles.aboutFeatureBold}>数据导出</Text>：支持 Excel 格式导出全部记账明细，便于归档或进一步分析。</Text>
+                      </View>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>•</Text>
+                        <Text style={styles.aboutFeatureText}><Text style={styles.aboutFeatureBold}>安全登录</Text>：支持记住密码、登录历史，忘记密码可通过密保问题重置，保障账户安全。</Text>
+                      </View>
+
+                      <Text style={styles.aboutSectionTitle}>角色说明</Text>
+                      <Text style={styles.aboutText}>
+                        主账号：拥有全部管理权限，可创建/编辑子账号、管理店铺和分类，审核子账号的记账记录。
+                      </Text>
+                      <Text style={styles.aboutText}>
+                        子账号：由主账号创建，可分配店铺和权限（录入/修改/删除），根据是否需要审核决定数据是否直接生效。
+                      </Text>
+
+                      <Text style={styles.aboutSectionTitle}>适用场景</Text>
+                      <Text style={styles.aboutText}>
+                        个体商户日常记账、家庭收支管理、多店铺经营数据汇总、小型团队费用记录。
+                      </Text>
+                    </View>
+                  )}
+
+                  {aboutModalType === "privacy" && (
+                    <View>
+                      <Text style={styles.aboutSectionTitle}>隐私政策</Text>
+                      <Text style={styles.aboutText}>
+                        本应用尊重并保护用户的个人隐私。以下是我们的隐私保护承诺：
+                      </Text>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>1.</Text>
+                        <Text style={styles.aboutFeatureText}>信息收集：我们仅收集必要的账号信息（邮箱、密码）用于身份验证，记账数据仅用于为您提供统计和查询服务。</Text>
+                      </View>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>2.</Text>
+                        <Text style={styles.aboutFeatureText}>数据存储：您的所有记账数据均加密存储在安全服务器上，我们不会将您的数据共享给第三方。</Text>
+                      </View>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>3.</Text>
+                        <Text style={styles.aboutFeatureText}>数据控制：您可随时查看、修改或删除您的记账数据。注销账号后，相关数据将被永久删除。</Text>
+                      </View>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>4.</Text>
+                        <Text style={styles.aboutFeatureText}>通讯安全：所有数据传输均采用加密通道（HTTPS），防止信息在传输过程中被窃取或篡改。</Text>
+                      </View>
+                      <View style={styles.aboutFeatureItem}>
+                        <Text style={styles.aboutFeatureBullet}>5.</Text>
+                        <Text style={styles.aboutFeatureText}>政策更新：我们可能会不时更新本隐私政策，更新后会通过应用内通知告知用户。</Text>
+                      </View>
+                      <Text style={[styles.aboutText, { marginTop: 12 }]}>
+                        如您对隐私政策有任何疑问，请通过应用内的「用户反馈」功能联系我们。
+                      </Text>
+                    </View>
+                  )}
+
+                  {aboutModalType === "personal" && (
+                    <View>
+                      <Text style={styles.aboutSectionTitle}>个人数据处理清单</Text>
+                      <Text style={styles.aboutText}>
+                        根据相关法律法规要求，我们列出本应用收集和处理的个人数据清单：
+                      </Text>
+                      <View style={styles.dataTable}>
+                        <View style={styles.dataRow}>
+                          <Text style={[styles.dataCell, styles.dataHeader]}>数据类型</Text>
+                          <Text style={[styles.dataCell, styles.dataHeader]}>用途</Text>
+                          <Text style={[styles.dataCell, styles.dataHeader]}>存储期限</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>邮箱地址</Text>
+                          <Text style={styles.dataCell}>账号登录</Text>
+                          <Text style={styles.dataCell}>账号存续期间</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>登录密码（加密存储）</Text>
+                          <Text style={styles.dataCell}>身份验证</Text>
+                          <Text style={styles.dataCell}>账号存续期间</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>显示名称</Text>
+                          <Text style={styles.dataCell}>个人资料展示</Text>
+                          <Text style={styles.dataCell}>用户可随时修改</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>记账数据</Text>
+                          <Text style={styles.dataCell}>核心功能</Text>
+                          <Text style={styles.dataCell}>用户可自行删除</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>密保问题及答案</Text>
+                          <Text style={styles.dataCell}>密码找回</Text>
+                          <Text style={styles.dataCell}>账号存续期间</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>反馈内容</Text>
+                          <Text style={styles.dataCell}>产品改进</Text>
+                          <Text style={styles.dataCell}>处理完毕后保留30天</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.aboutText}>
+                        我们不会将您的个人信息用于上述用途之外的任何目的。如需删除全部数据，请联系我们。
+                      </Text>
+                    </View>
+                  )}
+
+                  {aboutModalType === "thirdparty" && (
+                    <View>
+                      <Text style={styles.aboutSectionTitle}>第三方服务清单</Text>
+                      <Text style={styles.aboutText}>
+                        本应用使用了以下第三方服务，以确保功能的正常运行：
+                      </Text>
+                      <View style={styles.dataTable}>
+                        <View style={styles.dataRow}>
+                          <Text style={[styles.dataCell, styles.dataHeader]}>服务名称</Text>
+                          <Text style={[styles.dataCell, styles.dataHeader]}>用途</Text>
+                          <Text style={[styles.dataCell, styles.dataHeader]}>数据共享</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>Supabase</Text>
+                          <Text style={styles.dataCell}>用户认证、数据存储</Text>
+                          <Text style={styles.dataCell}>账号信息、记账数据</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>Express.js</Text>
+                          <Text style={styles.dataCell}>后端API服务</Text>
+                          <Text style={styles.dataCell}>处理请求数据</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>Expo / React Native</Text>
+                          <Text style={styles.dataCell}>前端框架</Text>
+                          <Text style={styles.dataCell}>不共享数据</Text>
+                        </View>
+                        <View style={styles.dataRow}>
+                          <Text style={styles.dataCell}>对象存储（S3兼容）</Text>
+                          <Text style={styles.dataCell}>文件存储</Text>
+                          <Text style={styles.dataCell}>用户上传的文件</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.aboutText}>
+                        以上第三方服务均遵循各自的服务协议和隐私政策，我们已选择可信赖的服务提供商，并仅共享必要的数据。
+                      </Text>
+                    </View>
+                  )}
+                </ScrollView>
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setAboutModalVisible(false)}>
+                    <Text style={styles.cancelBtnText}>关闭</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Feedback Modal */}
+      <Modal visible={feedbackModalVisible} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} disabled={Platform.OS === "web"}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>用户反馈</Text>
+                  <TouchableOpacity onPress={() => setFeedbackModalVisible(false)}>
+                    <FontAwesome6 name="xmark" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>联系方式（选填）</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="邮箱或手机号，方便我们回复您"
+                      placeholderTextColor="#94A3B8"
+                      value={feedbackEmail}
+                      onChangeText={setFeedbackEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>反馈内容 <Text style={{ color: "#EF4444" }}>*</Text></Text>
+                    <TextInput
+                      style={[styles.textInput, { height: 120, textAlignVertical: "top", paddingTop: 14 }]}
+                      placeholder="请描述您的建议或遇到的问题..."
+                      placeholderTextColor="#94A3B8"
+                      value={feedbackContent}
+                      onChangeText={setFeedbackContent}
+                      multiline
+                      numberOfLines={5}
+                    />
+                  </View>
+                </ScrollView>
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity style={[styles.modalBtn, styles.cancelBtn]} onPress={() => setFeedbackModalVisible(false)}>
+                    <Text style={styles.cancelBtnText}>取消</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalBtn, styles.submitBtn, submittingFeedback && { opacity: 0.6 }]}
+                    onPress={handleSubmitFeedback}
+                    disabled={submittingFeedback}
+                  >
+                    {submittingFeedback ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.submitBtnText}>提交反馈</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       </Screen>
   );
 }
@@ -1024,4 +1278,17 @@ const styles = StyleSheet.create({
   storeOptionTextActive: {
     color: "#2563EB", fontWeight: "600",
   },
+  // About Modal
+  aboutTitle: { fontSize: 22, fontWeight: "800", color: "#0F172A", textAlign: "center", marginBottom: 4 },
+  aboutVersion: { fontSize: 13, color: "#94A3B8", textAlign: "center", marginBottom: 20 },
+  aboutSectionTitle: { fontSize: 16, fontWeight: "700", color: "#0F172A", marginTop: 20, marginBottom: 10 },
+  aboutText: { fontSize: 14, color: "#475569", lineHeight: 22, marginBottom: 8 },
+  aboutFeatureItem: { flexDirection: "row", marginBottom: 8, gap: 6 },
+  aboutFeatureBullet: { fontSize: 14, color: "#2563EB", fontWeight: "700", width: 18 },
+  aboutFeatureText: { fontSize: 14, color: "#475569", lineHeight: 22, flex: 1 },
+  aboutFeatureBold: { fontWeight: "700", color: "#1E293B" },
+  dataTable: { borderRadius: 12, overflow: "hidden", borderWidth: 1, borderColor: "#E2E8F0", marginVertical: 12 },
+  dataRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#E2E8F0" },
+  dataCell: { flex: 1, fontSize: 12, color: "#475569", padding: 10, textAlign: "center" },
+  dataHeader: { fontWeight: "700", color: "#0F172A", backgroundColor: "#F8FAFC" },
 });
