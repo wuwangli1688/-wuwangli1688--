@@ -591,9 +591,9 @@ function compareVersions(a: string, b: string): number {
           </View>
         )}
 
-        {/* System */}
+        {/* 应用维护 */}
         <View style={styles.actionsSection}>
-          <Text style={styles.actionsTitle}>系统</Text>
+          <Text style={styles.actionsTitle}>应用维护</Text>
 
           <TouchableOpacity style={styles.actionItem} onPress={handleClearCache} disabled={caching}>
             <View style={[styles.actionIcon, { backgroundColor: "#F3E8FF" }]}>
@@ -618,6 +618,11 @@ function compareVersions(a: string, b: string): number {
             <Text style={styles.actionText}>{checkingUpdate ? "检查中..." : "检查新版本"}</Text>
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
+        </View>
+
+        {/* 关于应用 */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.actionsTitle}>关于应用</Text>
 
           <TouchableOpacity style={styles.actionItem} onPress={() => { setAboutModalType("product"); setAboutModalVisible(true); }}>
             <View style={[styles.actionIcon, { backgroundColor: "#EDE9FE" }]}>
@@ -658,6 +663,11 @@ function compareVersions(a: string, b: string): number {
             <Text style={styles.actionText}>第三方清单</Text>
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
+        </View>
+
+        {/* 账号安全 */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.actionsTitle}>账号安全</Text>
 
           <TouchableOpacity style={styles.actionItem} onPress={() => setPasswordModalVisible(true)}>
             <View style={[styles.actionIcon, { backgroundColor: "#F0FDF4" }]}>
@@ -666,13 +676,18 @@ function compareVersions(a: string, b: string): number {
             <Text style={styles.actionText}>修改密码</Text>
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
+        </View>
+
+        {/* 退出登录 */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.actionsTitle}>退出登录</Text>
 
           <TouchableOpacity style={styles.actionItem} onPress={handleLogout}>
             <View style={[styles.actionIcon, { backgroundColor: "#FEE2E2" }]}>
               <FontAwesome6 name="right-from-bracket" size={16} color="#DC2626" />
             </View>
             <Text style={[styles.actionText, { color: "#DC2626" }]}>退出登录</Text>
-            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+            <FontAwesome6 name="chevron-right" size={14} color="#DC2626" />
           </TouchableOpacity>
         </View>
 
