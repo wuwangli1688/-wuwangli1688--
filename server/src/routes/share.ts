@@ -125,4 +125,31 @@ router.get("/install-info", async (req: AuthenticatedRequest, res: Response) => 
   }
 });
 
+// POST /api/v1/share/feedback
+// Submit user feedback
+router.post("/feedback", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const { content, contact } = req.body;
+
+    if (!content || !content.trim()) {
+      res.status(400).json({ error: "反馈内容不能为空" });
+      return;
+    }
+
+    const { error } = await req.client.from("user_feedback").insert({
+      user_id: userId,
+      content: content.trim(),
+      contact: contact?.trim() || "",
+    });
+
+    if (error) throw error;
+
+    res.json({ data: { success: true } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
 export default router;

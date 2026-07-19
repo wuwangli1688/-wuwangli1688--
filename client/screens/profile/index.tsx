@@ -100,6 +100,16 @@ function compareVersions(a: string, b: string): number {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
 
+  // About modal
+  const [aboutModalVisible, setAboutModalVisible] = useState(false);
+  const [aboutModalType, setAboutModalType] = useState<"product" | "privacy" | "personal" | "thirdparty">("product");
+
+  // Feedback modal
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [feedbackEmail, setFeedbackEmail] = useState("");
+  const [feedbackContent, setFeedbackContent] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+
   const fetchAllTimeStats = useCallback(async () => {
     try {
       const [summaryRes, transRes] = await Promise.all([
@@ -297,6 +307,41 @@ function compareVersions(a: string, b: string): number {
       Alert.alert("清理失败", "缓存清理过程中发生错误");
     } finally {
       setCaching(false);
+    }
+  };
+
+  const handleOpenAbout = (type: 'product' | 'privacy' | 'personal' | 'thirdparty') => {
+    setAboutModalType(type);
+    setAboutModalVisible(true);
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!feedbackContent.trim()) {
+      Alert.alert("提示", "请填写反馈内容");
+      return;
+    }
+    setSubmittingFeedback(true);
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/accounts/feedback`, {
+        method: "POST",
+        body: JSON.stringify({
+          content: feedbackContent.trim(),
+          contact: feedbackEmail.trim(),
+        }),
+      });
+      if (res.ok) {
+        Alert.alert("感谢反馈", "您的建议已收到，我们会认真考虑！");
+        setFeedbackModalVisible(false);
+        setFeedbackContent('');
+        setFeedbackEmail('');
+      } else {
+        const err = await res.json();
+        Alert.alert("错误", err.error || "提交失败");
+      }
+    } catch {
+      Alert.alert("错误", "网络错误，请稍后重试");
+    } finally {
+      setSubmittingFeedback(false);
     }
   };
 
@@ -571,6 +616,46 @@ function compareVersions(a: string, b: string): number {
               )}
             </View>
             <Text style={styles.actionText}>{checkingUpdate ? "检查中..." : "检查新版本"}</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={() => { setAboutModalType("product"); setAboutModalVisible(true); }}>
+            <View style={[styles.actionIcon, { backgroundColor: "#EDE9FE" }]}>
+              <FontAwesome6 name="circle-info" size={16} color="#7C3AED" />
+            </View>
+            <Text style={styles.actionText}>产品说明</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={() => setFeedbackModalVisible(true)}>
+            <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
+              <FontAwesome6 name="message" size={16} color="#D97706" />
+            </View>
+            <Text style={styles.actionText}>用户反馈</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={() => { setAboutModalType("privacy"); setAboutModalVisible(true); }}>
+            <View style={[styles.actionIcon, { backgroundColor: "#DBEAFE" }]}>
+              <FontAwesome6 name="shield-halved" size={16} color="#2563EB" />
+            </View>
+            <Text style={styles.actionText}>隐私政策</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={() => { setAboutModalType("personal"); setAboutModalVisible(true); }}>
+            <View style={[styles.actionIcon, { backgroundColor: "#FCE7F3" }]}>
+              <FontAwesome6 name="user-check" size={16} color="#DB2777" />
+            </View>
+            <Text style={styles.actionText}>个人清单</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={() => { setAboutModalType("thirdparty"); setAboutModalVisible(true); }}>
+            <View style={[styles.actionIcon, { backgroundColor: "#D1FAE5" }]}>
+              <FontAwesome6 name="cube" size={16} color="#059669" />
+            </View>
+            <Text style={styles.actionText}>第三方清单</Text>
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
 
