@@ -173,25 +173,38 @@ function compareVersions(a: string, b: string): number {
     setExporting(true);
     try {
       const url = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/export/transactions`;
+      const res = await authFetch(url);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "导出失败");
+      }
+      const now = new Date();
+      const fileName = `记账明细_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}.xlsx`;
       if (Platform.OS === "web") {
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement("a");
-        link.href = url;
-        link.download = "";
+        link.href = blobUrl;
+        link.download = fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
       } else {
-        const now = new Date();
-        const fileName = `记账明细_${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}.xlsx`;
-        const fileUri = `${(FileSystem as any).documentDirectory}${fileName}`;
-        const downloadResult = await (FileSystem as any).downloadAsync(url, fileUri);
-        if (downloadResult.status !== 200) {
-          Alert.alert("导出失败", "下载文件失败，请稍后重试");
-          return;
+        const arrayBuffer = await res.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
         }
+        const base64 = btoa(binary);
+        const filePath = `${(FileSystem as any).cacheDirectory}${fileName}`;
+        await (FileSystem as any).writeAsStringAsync(filePath, base64, {
+          encoding: (FileSystem as any).EncodingType.Base64,
+        });
         const isAvailable = await Sharing.isAvailableAsync();
         if (isAvailable) {
-          await Sharing.shareAsync(downloadResult.uri, {
+          await Sharing.shareAsync(filePath, {
             mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             dialogTitle: "导出记账明细",
             UTI: "org.openxmlformats.spreadsheetml.sheet",
@@ -200,8 +213,8 @@ function compareVersions(a: string, b: string): number {
           Alert.alert("提示", "文件已保存到本地");
         }
       }
-    } catch {
-      Alert.alert("导出失败", "导出过程中发生错误");
+    } catch (e: any) {
+      Alert.alert("导出失败", e.message || "导出过程中发生错误");
     } finally {
       setExporting(false);
     }
