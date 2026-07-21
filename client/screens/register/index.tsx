@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert } from "react-native";
 import { Screen } from "@/components/Screen";
+import IcpFooter from "@/components/IcpFooter";
 import { useAuth } from "@/contexts/AuthContext";
 import { authFetch } from "@/lib/supabase";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
@@ -223,6 +224,7 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          <IcpFooter />
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

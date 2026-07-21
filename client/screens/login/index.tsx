@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, FlatList } from "react-native";
 import { Screen } from "@/components/Screen";
+import IcpFooter from "@/components/IcpFooter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -273,6 +274,7 @@ export default function LoginScreen() {
               </View>
             </View>
           </View>
+          <IcpFooter />
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

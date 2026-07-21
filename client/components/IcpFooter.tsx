@@ -1,11 +1,9 @@
-import { Platform, View, Text, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, Linking } from 'react-native';
 
 const ICP_NUMBER = '粤ICP备2026091192号';
 const ICP_URL = 'https://beian.miit.gov.cn/';
 
 export default function IcpFooter() {
-  if (Platform.OS !== 'web') return null;
-
   return (
     <View
       style={{
@@ -13,9 +11,6 @@ export default function IcpFooter() {
         justifyContent: 'center',
         paddingVertical: 12,
         paddingHorizontal: 16,
-        backgroundColor: '#F8FAFC',
-        borderTopWidth: 1,
-        borderTopColor: '#E5E7EB',
       }}
     >
       <TouchableOpacity
@@ -24,7 +19,7 @@ export default function IcpFooter() {
       >
         <Text
           style={{
-            fontSize: 12,
+            fontSize: 11,
             color: '#9CA3AF',
           }}
         >

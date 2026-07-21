@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert } from "react-native";
 import { Screen } from "@/components/Screen";
+import IcpFooter from "@/components/IcpFooter";
 import { useSafeRouter } from "@/hooks/useSafeRouter";
 
 /**
@@ -291,6 +292,7 @@ export default function ForgotPasswordScreen() {
               )}
             </View>
           </View>
+          <IcpFooter />
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
