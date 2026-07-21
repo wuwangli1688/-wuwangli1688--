@@ -92,7 +92,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ],
     "extra": {
       "eas": {
-        "projectId": process.env.EXPO_PUBLIC_COZE_PROJECT_ID || undefined
+        "projectId": "363cae34-ef0a-4c22-901a-5caba415fbbb"
       }
     }
   }
