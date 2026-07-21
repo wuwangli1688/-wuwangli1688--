@@ -1,24 +1,22 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
-const appName = process.env.COZE_PROJECT_NAME || process.env.EXPO_PUBLIC_COZE_PROJECT_NAME || '即时记账';
-const projectId = process.env.COZE_PROJECT_ID || process.env.EXPO_PUBLIC_COZE_PROJECT_ID;
-const slugAppName = projectId ? `app${projectId}` : 'jizhang';
-const bundleId = `com.${slugAppName}.app`;
+const appName = '即时记账';
+const appVersion = '1.2.1';
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   return {
     ...config,
     "name": appName,
-    "slug": slugAppName,
-    "version": "1.2.1",
+    "slug": "jizhang-ledger",
+    "version": appVersion,
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": slugAppName,
+    "scheme": "jizhang",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": bundleId,
+      "bundleIdentifier": "com.jizhang.app",
       "buildNumber": "1",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "即时记账需要访问您的相册，以便您上传记账凭证图片。",
@@ -37,7 +35,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#FF6B35"
       },
-      "package": `com.anonymous.x${projectId || '0'}`,
+      "package": "com.jizhang.app",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
@@ -94,7 +92,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ],
     "extra": {
       "eas": {
-        "projectId": projectId || undefined
+        "projectId": process.env.EXPO_PUBLIC_COZE_PROJECT_ID || undefined
       }
     }
   }
