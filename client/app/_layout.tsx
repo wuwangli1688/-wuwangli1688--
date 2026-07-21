@@ -8,6 +8,8 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import UpdateBanner from '@/components/UpdateBanner';
 
 
+import IcpFooter from '@/components/IcpFooter';
+
 import '../global.css';
 
 LogBox.ignoreLogs([
@@ -93,6 +95,7 @@ export default function RootLayout() {
             <Stack.Screen name="category-detail" options={{ title: "分类明细" }} />
             <Stack.Screen name="(tabs)" options={{ title: "" }} />
           </Stack>
+          <IcpFooter />
           <UpdateBanner />
           <Toast />
         </AuthGate>
