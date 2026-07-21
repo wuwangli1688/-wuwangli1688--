@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>隐私政策 - 即时记账</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: #F8FAFC;
+      color: #1E293B;
+      line-height: 1.8;
+      padding: 0;
+    }
+    .header {
+      background: linear-gradient(135deg, #FF6B35 0%, #F97316 100%);
+      color: white;
+      padding: 48px 24px;
+      text-align: center;
+    }
+    .header h1 { font-size: 28px; margin-bottom: 8px; font-weight: 700; }
+    .header p { font-size: 14px; opacity: 0.9; }
+    .container { max-width: 800px; margin: 0 auto; padding: 32px 24px; }
+    .section { margin-bottom: 32px; }
+    .section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #0F172A;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #FF6B35;
+    }
+    .section h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #334155;
+      margin-top: 16px;
+      margin-bottom: 8px;
+    }
+    .section p, .section li {
+      font-size: 15px;
+      color: #475569;
+      margin-bottom: 8px;
+    }
+    .section ul { padding-left: 20px; }
+    .section li { margin-bottom: 6px; }
+    .highlight { background: #FFF7ED; padding: 16px; border-radius: 8px; border-left: 4px solid #FF6B35; margin: 16px 0; }
+    .footer {
+      text-align: center;
+      padding: 32px 24px;
+      color: #94A3B8;
+      font-size: 13px;
+      border-top: 1px solid #E2E8F0;
+    }
+    .footer a { color: #FF6B35; text-decoration: none; }
+    .last-updated { text-align: right; color: #94A3B8; font-size: 13px; margin-bottom: 24px; }
+    @media (max-width: 600px) {
+      .header { padding: 32px 16px; }
+      .header h1 { font-size: 22px; }
+      .container { padding: 24px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📋 隐私政策</h1>
+    <p>即时记账 · 尊重并保护您的隐私</p>
+  </div>
+  <div class="container">
+    <p class="last-updated">最后更新日期：2025年7月</p>
+
+    <div class="highlight">
+      <strong>简要说明：</strong>即时记账是一款本地优先的记账工具。您的数据属于您自己，我们不会将您的个人信息用于任何商业目的或出售给第三方。
+    </div>
+
+    <div class="section">
+      <h2>1. 信息收集</h2>
+      <p>我们仅收集使用本应用所必需的最基本信息：</p>
+      <ul>
+        <li><strong>注册信息：</strong>用户名（账号）和加密密码。我们使用 Supabase Auth 进行安全认证，密码经哈希加密存储，我们无法获取您的原始密码。</li>
+        <li><strong>记账数据：</strong>您录入的收支记录、分类、金额、日期、备注等。这些数据是应用的核心功能数据。</li>
+        <li><strong>设备权限：</strong>如您同意，应用可能访问相机（拍摄凭证）、相册（选择图片）、麦克风（语音备注）、位置（记录消费地点）。这些权限仅在您主动使用时触发，不会在后台收集信息。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>2. 信息使用</h2>
+      <p>我们收集的信息仅用于以下目的：</p>
+      <ul>
+        <li>提供记账、统计、报表等核心功能服务</li>
+        <li>账户认证与安全管理</li>
+        <li>数据同步与备份</li>
+        <li>改进和优化产品体验</li>
+        <li>应您的要求提供客户支持</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>3. 数据存储与安全</h2>
+      <h3>3.1 存储方式</h3>
+      <p>您的数据存储在 <strong>Supabase</strong>（一个符合 GDPR 和 SOC2 合规要求的数据平台）的 PostgreSQL 数据库中，数据传输全程使用 TLS/SSL 加密。</p>
+      <h3>3.2 安全措施</h3>
+      <ul>
+        <li>密码经过 bcrypt 哈希加密存储</li>
+        <li>API 请求使用 JWT Token 进行身份验证</li>
+        <li>数据库访问受行级安全策略（RLS）保护</li>
+        <li>服务器部署在腾讯云，配置防火墙等安全防护</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>4. 第三方服务</h2>
+      <p>本应用使用以下第三方服务：</p>
+      <ul>
+        <li><strong>Supabase</strong> — 用户认证、数据库存储</li>
+        <li><strong>腾讯云</strong> — 服务器托管</li>
+        <li><strong>Coze</strong> — 部分 AI 辅助功能</li>
+      </ul>
+      <p>这些第三方服务提供商均遵守相应的数据保护法规，我们仅向其提供提供服务所必需的最少数据。</p>
+    </div>
+
+    <div class="section">
+      <h2>5. 数据导出与删除</h2>
+      <ul>
+        <li><strong>数据导出：</strong>您可以在应用内「我的」→「数据管理」中导出您的记账数据为 Excel 格式。</li>
+        <li><strong>账户注销：</strong>您可以通过联系我们来申请删除您的账户及相关数据。</li>
+        <li>账户注销后，您的所有个人数据和记账记录将被永久删除，无法恢复。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>6. 儿童隐私</h2>
+      <p>本应用不面向 14 周岁以下的儿童。如果我们发现无意中收集了儿童的个人信息，将立即采取措施删除相关数据。</p>
+    </div>
+
+    <div class="section">
+      <h2>7. 隐私政策更新</h2>
+      <p>我们可能会不时更新本隐私政策。更新后的政策将在应用内或通过网站公告通知您。重大变更会通过应用内通知或弹窗提醒您。</p>
+    </div>
+
+    <div class="section">
+      <h2>8. 联系我们</h2>
+      <p>如果您对本隐私政策有任何疑问或建议，或需要行使您的数据权利，请通过以下方式联系我们：</p>
+      <ul>
+        <li><strong>邮箱：</strong> <a href="mailto:support@wuwanli.online">support@wuwanli.online</a></li>
+        <li><strong>网站：</strong> <a href="https://wuwanli.online">https://wuwanli.online</a></li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>9. 合规声明</h2>
+      <p>本应用遵守《中华人民共和国个人信息保护法》（PIPL）及相关法律法规。我们致力于保护您的个人信息安全，并依法履行个人信息保护义务。</p>
+      <p>ICP备案号：<a href="https://beian.miit.gov.cn/" target="_blank">粤ICP备2026091192号</a></p>
+    </div>
+  </div>
+  <div class="footer">
+    <p>© 2025 即时记账. All rights reserved.</p>
+    <p><a href="https://beian.miit.gov.cn/" target="_blank">粤ICP备2026091192号</a></p>
+  </div>
+</body>
+</html>
