@@ -199,41 +199,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (account: string, password: string) => {
-    const email = toSupabaseEmail(account);
     const supabase = await getSupabase();
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
+
+    // Call backend API to register (uses admin API, no email required)
+    const res = await fetch(`${BACKEND_BASE_URL}/api/v1/accounts/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account, password }),
     });
 
-    if (error) return { error: error.message };
+    const data = await res.json();
+    if (!res.ok) return { error: data.error || '注册失败' };
 
-    // Auto-confirm is enabled, so session should be available
+    // Set session in Supabase client so onAuthStateChange fires
     if (data.session) {
+      await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+
       setState({
         user: data.session.user,
         session: data.session,
         isLoading: false,
-        role: null,
+        role: 'parent',
         role_title: null,
         parentUserId: null,
         pendingCount: 0,
         displayName: data.session.user.user_metadata?.display_name || '',
       });
-
-      // Create profile as parent
-      try {
-        await fetch(`${BACKEND_BASE_URL}/api/v1/accounts/ensure-profile`, {
-          method: 'POST',
-          headers: {
-            'x-session': data.session.access_token,
-            'Content-Type': 'application/json',
-          },
-        });
-        await fetchProfile(data.session.user.id);
-      } catch {
-        // Profile creation failed, will retry on next access
-      }
     }
 
     return {};

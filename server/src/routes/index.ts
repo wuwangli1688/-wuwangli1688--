@@ -10,6 +10,82 @@ const router = Router();
 // Public routes (no auth required)
 router.use("/share", shareRouter);
 
+// ==================== Account Registration (public, no auth) ====================
+// POST /api/v1/accounts/register - Register with admin API (no email required)
+import accountsRouter from "./accounts.js";
+
+router.post("/accounts/register", async (req: Request, res: Response) => {
+  try {
+    const { account, password } = req.body;
+    if (!account || !password) {
+      return res.status(400).json({ error: '请提供账号和密码' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: '密码长度至少6位' });
+    }
+
+    // Utility: convert flexible account input to Supabase email
+    function toSupabaseEmail(account: string): string {
+      const trimmed = account.trim();
+      if (trimmed.includes('@') && trimmed.includes('.')) {
+        return trimmed.toLowerCase();
+      }
+      const encoded = encodeURIComponent(trimmed).toLowerCase();
+      return `${encoded}@jizhangapp.local`;
+    }
+
+    const supabaseEmail = toSupabaseEmail(account);
+    const serviceClient = getSupabaseClient();
+
+    // Create user via service role (admin API) - no email sent
+    const { data, error } = await (serviceClient.auth.admin as any).createUser({
+      email: supabaseEmail,
+      password,
+      email_confirm: true,
+      user_metadata: { display_name: account },
+    });
+
+    if (error) {
+      if (error.message?.includes('already registered')) {
+        return res.status(400).json({ error: '该账号已被注册' });
+      }
+      return res.status(400).json({ error: '注册失败: ' + error.message });
+    }
+
+    const newUserId = data.user.id;
+
+    // Create user profile as parent
+    await serviceClient.from('user_profiles').insert({
+      id: newUserId,
+      role: 'parent',
+      parent_user_id: null,
+      display_name: account,
+    });
+
+    // Sign in immediately to get session
+    const { data: sessionData, error: sessionError } = await serviceClient.auth.signInWithPassword({
+      email: supabaseEmail,
+      password,
+    });
+
+    if (sessionError || !sessionData.session) {
+      return res.status(500).json({ error: '注册成功但登录失败，请尝试登录' });
+    }
+
+    return res.status(201).json({
+      message: '注册成功',
+      session: {
+        access_token: sessionData.session.access_token,
+        refresh_token: sessionData.session.refresh_token,
+        user: sessionData.session.user,
+      },
+    });
+  } catch (error) {
+    console.error('Register error:', error);
+    return res.status(500).json({ error: '注册失败' });
+  }
+});
+
 // All business routes require authentication
 router.use(authMiddleware);
 
@@ -771,8 +847,6 @@ import exportRouter from "./export.js";
 
 // ==================== Export ====================
 router.use("/export", exportRouter);
-
-import accountsRouter from "./accounts.js";
 
 // ==================== Account Management ====================
 router.use("/accounts", accountsRouter);
