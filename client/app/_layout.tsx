@@ -93,6 +93,7 @@ export default function RootLayout() {
             <Stack.Screen name="share" options={{ title: "分享应用" }} />
             <Stack.Screen name="detail" options={{ title: "交易详情" }} />
             <Stack.Screen name="category-detail" options={{ title: "分类明细" }} />
+            <Stack.Screen name="edit-transaction" options={{ title: "编辑记录" }} />
             <Stack.Screen name="(tabs)" options={{ title: "" }} />
           </Stack>
           <IcpFooter />

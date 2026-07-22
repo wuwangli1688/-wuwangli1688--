@@ -13,6 +13,7 @@ import { useFocusEffect } from "expo-router";
 import { FontAwesome6 } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { authFetch } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 const EXPO_PUBLIC_BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
 
@@ -53,6 +54,7 @@ function getIconName(name: string): keyof typeof FontAwesome6.glyphMap {
 export default function CategoryDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useSafeRouter();
+  const { role } = useAuth();
   const { category_id, type, month, name, color, icon } = useSafeSearchParams<{
     category_id: number;
     type: string;
@@ -100,8 +102,9 @@ export default function CategoryDetailScreen() {
   const renderTransaction = ({ item, index }: { item: TransactionItem; index: number }) => {
     const isExpense = item.type === "expense";
     const cat = item.categories || { name: name || "未分类", icon: icon || "circle", color: color || "#94A3B8" };
+    const isParent = role === "parent";
 
-    return (
+    const content = (
       <View style={s.txRow}>
         <View style={s.txLeft}>
           <View style={[s.txIcon, { backgroundColor: `${cat.color}18` }]}>
@@ -126,6 +129,19 @@ export default function CategoryDetailScreen() {
         </View>
       </View>
     );
+
+    if (isParent) {
+      return (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push("/edit-transaction", { id: item.id })}
+        >
+          {content}
+        </TouchableOpacity>
+      );
+    }
+
+    return content;
   };
 
   const displayMonth = month
@@ -158,6 +174,13 @@ export default function CategoryDetailScreen() {
         </Text>
         <Text style={s.summaryCount}>共 {transactions.length} 笔记录</Text>
       </View>
+
+      {role === "parent" && transactions.length > 0 && (
+        <View style={s.editHint}>
+          <FontAwesome6 name="pencil" size={12} color="#2563EB" />
+          <Text style={s.editHintText}>点击记录可编辑或删除</Text>
+        </View>
+      )}
 
       {loading ? (
         <View style={s.loadingContainer}>
@@ -318,6 +341,19 @@ const s = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  editHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  editHintText: {
+    fontSize: 12,
+    color: "#2563EB",
+    fontWeight: "500",
   },
   emptyContainer: {
     flex: 1,
