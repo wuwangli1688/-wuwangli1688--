@@ -9,8 +9,19 @@ const router = Router();
 // GET /api/v1/export/transactions - Export transactions to Excel
 router.get("/transactions", async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { start_date, end_date, store_id } = req.query;
+    // Check subscription: free users cannot export
     const client = getSupabaseClient();
+    const { data: sub } = await client
+      .from('subscriptions')
+      .select('plan_type')
+      .eq('user_id', req.userId!)
+      .maybeSingle();
+
+    if (!sub || sub.plan_type !== 'pro') {
+      return res.status(403).json({ error: '免费版不支持数据导出，请升级专业版' });
+    }
+
+    const { start_date, end_date, store_id } = req.query;
     const userId = req.userId!;
     const role = req.userRole!;
     const parentUserId = req.parentUserId;

@@ -46,6 +46,7 @@ const accountName = email
   : '';
   const router = useSafeRouter();
   const [summary, setSummary] = useState<Summary>({ total_income: "0.00", total_expense: "0.00", balance: "0.00" });
+  const [subscription, setSubscription] = useState<any>(null);
 
 // Compare semantic versions (e.g. "1.0.1" > "1.0.0" returns 1)
 function compareVersions(a: string, b: string): number {
@@ -155,8 +156,19 @@ function compareVersions(a: string, b: string): number {
       fetchAllTimeStats();
       refreshProfile();
       fetchStores();
+      fetchSubscription();
     }, [fetchAllTimeStats, refreshProfile, fetchStores])
   );
+
+  const fetchSubscription = useCallback(async () => {
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/my`);
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data.data || data);
+      }
+    } catch {}
+  }, []);
 
   const handleSelectStore = async (storeId: string | null) => {
     setSelectedStoreId(storeId);
@@ -170,6 +182,18 @@ function compareVersions(a: string, b: string): number {
 
   const handleExport = useCallback(async () => {
     if (exporting) return;
+    // Check subscription: free users cannot export
+    if (!subscription || subscription?.plan_type === 'free') {
+      Alert.alert(
+        "升级专业版",
+        "免费版不支持数据导出。升级专业版后可导出 Excel 格式记账明细。",
+        [
+          { text: "取消", style: "cancel" },
+          { text: "去升级", onPress: () => router.push('/subscription') }
+        ]
+      );
+      return;
+    }
     setExporting(true);
     try {
       const url = `${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/export/transactions`;
@@ -607,6 +631,14 @@ function compareVersions(a: string, b: string): number {
         {/* 应用维护 */}
         <View style={styles.actionsSection}>
           <Text style={styles.actionsTitle}>应用维护</Text>
+
+          <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/subscription")}>
+            <View style={[styles.actionIcon, { backgroundColor: "#E0E7FF" }]}>
+              <FontAwesome6 name="crown" size={16} color="#4F46E5" />
+            </View>
+            <Text style={styles.actionText}>订阅管理</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionItem} onPress={handleClearCache} disabled={caching}>
             <View style={[styles.actionIcon, { backgroundColor: "#F3E8FF" }]}>

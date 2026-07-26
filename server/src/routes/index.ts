@@ -856,4 +856,9 @@ import storesRouter from "./stores.js";
 // ==================== Stores (店铺) ====================
 router.use("/stores", storesRouter);
 
+import subscriptionsRouter from "./subscriptions.js";
+
+// ==================== Subscriptions (订阅) ====================
+router.use("/subscriptions", subscriptionsRouter);
+
 export default router;

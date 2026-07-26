@@ -48,6 +48,7 @@ export default function StoresScreen() {
   const [stores, setStores] = useState<Store[]>([]);
   const [subAccounts, setSubAccounts] = useState<SubAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [subscription, setSubscription] = useState<any>(null);
 
   // Modal states
   const [storeModalVisible, setStoreModalVisible] = useState(false);
@@ -84,14 +85,38 @@ export default function StoresScreen() {
     }
   }, [isParent]);
 
+  const fetchSubscription = useCallback(async () => {
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/my`);
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data.data || data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch subscription:", err);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       setLoading(true);
-      Promise.all([fetchStores(), fetchSubAccounts()]).finally(() => setLoading(false));
-    }, [fetchStores, fetchSubAccounts])
+      Promise.all([fetchStores(), fetchSubAccounts(), fetchSubscription()]).finally(() => setLoading(false));
+    }, [fetchStores, fetchSubAccounts, fetchSubscription])
   );
 
   const handleAddStore = () => {
+    // Check store limit for free users
+    if (subscription?.plan_type === 'free' && stores.length >= 1) {
+      Alert.alert(
+        "升级专业版",
+        "免费版最多管理1个店铺。升级专业版可创建无限店铺。",
+        [
+          { text: "取消", style: "cancel" },
+          { text: "去升级", onPress: () => router.push('/subscription') }
+        ]
+      );
+      return;
+    }
     setEditingStore(null);
     setStoreName("");
     setStoreNotes("");

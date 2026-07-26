@@ -58,6 +58,7 @@ export default function AccountManageScreen() {
   const [storesList, setStoresList] = useState<Store[]>([]);
   const [formPermissions, setFormPermissions] = useState<string[]>(['create', 'modify', 'delete']);
   const [formNeedsApproval, setFormNeedsApproval] = useState(true);
+  const [subscription, setSubscription] = useState<any>(null);
 
   const PERMISSION_LABELS: Record<string, string> = {
     create: '录入数据',
@@ -94,11 +95,22 @@ export default function AccountManageScreen() {
     }
   }, []);
 
+  const fetchSubscription = useCallback(async () => {
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/my`);
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data.data || data);
+      }
+    } catch {}
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       fetchSubAccounts();
       fetchStores();
-    }, [fetchSubAccounts, fetchStores])
+      fetchSubscription();
+    }, [fetchSubAccounts, fetchStores, fetchSubscription])
   );
 
   const handleEdit = (account: SubAccount) => {
@@ -113,6 +125,18 @@ export default function AccountManageScreen() {
   };
 
   const handleAdd = () => {
+    // Check subscription: free users cannot create sub-accounts
+    if (!subscription || subscription?.plan_type === 'free') {
+      Alert.alert(
+        "升级专业版",
+        "免费版不支持创建子账号。升级专业版后可按 ¥5/月/个 添加子账号。",
+        [
+          { text: "取消", style: "cancel" },
+          { text: "去升级", onPress: () => router.push('/subscription') }
+        ]
+      );
+      return;
+    }
     setEditingAccount(null);
     setFormUsername('');
     setFormPassword('');

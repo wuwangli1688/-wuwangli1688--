@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  Alert,
 } from "react-native";
 import { Screen } from "@/components/Screen";
 import { useFocusEffect } from "expo-router";
@@ -53,10 +54,24 @@ export default function StatsScreen() {
   const [type, setType] = useState<"expense" | "income">("expense");
   const [categoryStats, setCategoryStats] = useState<CategoryStat[]>([]);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [isPro, setIsPro] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
+
+  // Check subscription status
+  const checkSubscription = useCallback(async () => {
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/check-feature?feature=history_unlimited`);
+      if (res.ok) {
+        const data = await res.json();
+        setIsPro(data.data?.available || false);
+      }
+    } catch {
+      // silently fail
+    }
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -82,12 +97,32 @@ export default function StatsScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, [fetchData])
+      checkSubscription();
+    }, [fetchData, checkSubscription])
   );
 
   const changeMonth = (delta: number) => {
     const [year, month] = currentMonth.split("-").map(Number);
     const d = new Date(year, month - 1 + delta, 1);
+
+    // Free users can only view last 3 months
+    if (!isPro) {
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      threeMonthsAgo.setDate(1);
+      if (d < threeMonthsAgo) {
+        Alert.alert(
+          '仅限专业版',
+          '免费版仅可查看近3个月的统计数据。升级专业版可查看全部历史数据。',
+          [
+            { text: '取消', style: 'cancel' },
+            { text: '去升级', onPress: () => router.push('/subscription') },
+          ]
+        );
+        return;
+      }
+    }
+
     setCurrentMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   };
 

@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Response } from "express";
 import QRCode from "qrcode";
 import { authMiddleware, type AuthenticatedRequest } from "../middleware/auth.js";
+import { getSupabaseClient } from "../storage/database/supabase-client.js";
 
 const router = Router();
 
@@ -137,7 +138,7 @@ router.post("/feedback", authMiddleware, async (req: AuthenticatedRequest, res: 
       return;
     }
 
-    const { error } = await req.client.from("user_feedback").insert({
+    const { error } = await getSupabaseClient().from("user_feedback").insert({
       user_id: userId,
       content: content.trim(),
       contact: contact?.trim() || "",

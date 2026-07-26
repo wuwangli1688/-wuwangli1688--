@@ -305,6 +305,30 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
 // POST /api/v1/accounts/sub-accounts - Create sub-account (parent only)
 router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Check subscription: free users cannot create sub-accounts
+    const serviceClient = getSupabaseClient();
+    const { data: sub } = await serviceClient
+      .from('subscriptions')
+      .select('*')
+      .eq('user_id', req.userId!)
+      .maybeSingle();
+
+    const planType = sub?.plan_type || 'free';
+    const subAccountLimit = planType === 'pro' ? 9999 : 0;
+
+    if (subAccountLimit <= 0) {
+      // Count existing sub-accounts
+      const { count } = await serviceClient
+        .from('user_profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('parent_user_id', req.userId!)
+        .eq('role', 'child');
+
+      if (count !== null && count >= subAccountLimit) {
+        return res.status(403).json({ error: '免费版不支持创建子账号，请升级专业版' });
+      }
+    }
+
     const { username, password, store_ids, role_title, permissions, needs_approval } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: '请提供用户名和密码' });
@@ -314,7 +338,6 @@ router.post('/sub-accounts', requireParent, async (req: AuthenticatedRequest, re
     }
 
     const parentId = req.userId!;
-    const serviceClient = getSupabaseClient();
     const supabaseEmail = toSupabaseEmail(username);
 
     // Create user via service role (admin API)
