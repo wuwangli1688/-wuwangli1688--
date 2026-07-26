@@ -640,6 +640,16 @@ function compareVersions(a: string, b: string): number {
             <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
           </TouchableOpacity>
 
+          {role === 'parent' && (
+          <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/payment-config")}>
+            <View style={[styles.actionIcon, { backgroundColor: "#FEF3C7" }]}>
+              <FontAwesome6 name="money-bill" size={16} color="#D97706" />
+            </View>
+            <Text style={styles.actionText}>支付配置</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={styles.actionItem} onPress={handleClearCache} disabled={caching}>
             <View style={[styles.actionIcon, { backgroundColor: "#F3E8FF" }]}>
               {caching ? (

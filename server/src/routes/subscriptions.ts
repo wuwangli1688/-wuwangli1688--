@@ -197,10 +197,66 @@ router.get('/check-feature', async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
-// POST /api/v1/subscriptions/create-order - Create a payment order (manual)
+// GET /api/v1/subscriptions/payment-config - Get payment QR code config
+router.get('/payment-config', async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const client = getSupabaseClient();
+    const { data: config } = await client
+      .from('payment_config')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
+    res.json({ data: config || { alipay_qrcode_url: null, wechat_qrcode_url: null, contact_info: '请联系管理员' } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// PUT /api/v1/subscriptions/payment-config - Update payment config (admin only)
+router.put('/payment-config', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { alipay_qrcode_url, wechat_qrcode_url, contact_info } = req.body;
+    const client = getSupabaseClient();
+
+    const { data: existing } = await client
+      .from('payment_config')
+      .select('id')
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      await client
+        .from('payment_config')
+        .update({
+          alipay_qrcode_url: alipay_qrcode_url || null,
+          wechat_qrcode_url: wechat_qrcode_url || null,
+          contact_info: contact_info || '请联系管理员',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+    } else {
+      await client
+        .from('payment_config')
+        .insert({
+          alipay_qrcode_url: alipay_qrcode_url || null,
+          wechat_qrcode_url: wechat_qrcode_url || null,
+          contact_info: contact_info || '请联系管理员',
+        });
+    }
+
+    res.json({ data: { success: true, message: '支付配置已更新' } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/v1/subscriptions/create-order - Create a payment order
 router.post('/create-order', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { plan_type, period } = req.body; // plan_type: 'pro', period: 'monthly' | 'yearly'
+    const { plan_type, period } = req.body;
     const userId = req.userId!;
 
     if (plan_type !== 'pro') {
@@ -232,14 +288,23 @@ router.post('/create-order', async (req: AuthenticatedRequest, res: Response) =>
       throw error;
     }
 
+    // Get payment config
+    const { data: payConfig } = await client
+      .from('payment_config')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
     res.json({
       data: {
         order,
         payment_info: {
-          method: 'manual',
-          message: '请使用支付宝或微信扫码支付，支付后联系管理员确认开通',
+          method: 'qrcode',
           amount: price,
           note: `即时记账-${period === 'monthly' ? '月付' : '年付'}-专业版`,
+          alipay_qrcode_url: payConfig?.alipay_qrcode_url || null,
+          wechat_qrcode_url: payConfig?.wechat_qrcode_url || null,
+          contact_info: payConfig?.contact_info || '请联系管理员',
         },
       },
     });
@@ -249,10 +314,11 @@ router.post('/create-order', async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
-// POST /api/v1/subscriptions/activate - Activate a subscription (admin only or after payment)
-router.post('/activate', async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/v1/subscriptions/confirm-payment - User confirms payment, auto-activate
+router.post('/confirm-payment', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { order_id } = req.body;
+    const userId = req.userId!;
     const client = getSupabaseClient();
 
     // Find the order
@@ -266,11 +332,15 @@ router.post('/activate', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: '订单不存在' });
     }
 
+    if (order.user_id !== userId) {
+      return res.status(403).json({ error: '无权操作该订单' });
+    }
+
     if (order.status !== 'pending') {
       return res.status(400).json({ error: '订单已处理' });
     }
 
-    // Update order status
+    // Mark order as paid
     const now = new Date().toISOString();
     await client
       .from('subscription_orders')
@@ -289,7 +359,7 @@ router.post('/activate', async (req: AuthenticatedRequest, res: Response) => {
       expiresAt.setFullYear(expiresAt.getFullYear() + 1);
     }
 
-    // Check if user already has a subscription
+    // Update or create subscription
     const { data: existingSub } = await client
       .from('subscriptions')
       .select('*')
@@ -297,7 +367,6 @@ router.post('/activate', async (req: AuthenticatedRequest, res: Response) => {
       .maybeSingle();
 
     if (existingSub) {
-      // Update existing subscription
       await client
         .from('subscriptions')
         .update({
@@ -311,7 +380,6 @@ router.post('/activate', async (req: AuthenticatedRequest, res: Response) => {
         })
         .eq('id', existingSub.id);
     } else {
-      // Create new subscription
       await client
         .from('subscriptions')
         .insert({
@@ -325,7 +393,7 @@ router.post('/activate', async (req: AuthenticatedRequest, res: Response) => {
         });
     }
 
-    res.json({ data: { success: true, message: '套餐已激活' } });
+    res.json({ data: { success: true, message: '付款确认成功，专业版已开通！' } });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     res.status(500).json({ error: message });

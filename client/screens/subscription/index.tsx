@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  StyleSheet,
+  Modal,
+  Image,
   Platform,
 } from 'react-native';
 import { Screen } from '@/components/Screen';
@@ -45,6 +46,16 @@ interface SubscriptionData {
   };
 }
 
+interface PaymentInfo {
+  order_id: string;
+  amount: number;
+  note: string;
+  alipay_qrcode_url: string | null;
+  wechat_qrcode_url: string | null;
+  contact_info: string;
+  period: string;
+}
+
 export default function SubscriptionScreen() {
   const insets = useSafeAreaInsets();
   const { role } = useAuth();
@@ -52,6 +63,10 @@ export default function SubscriptionScreen() {
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('monthly');
   const [ordering, setOrdering] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
+  const [paymentModalVisible, setPaymentModalVisible] = useState(false);
+  const [showAlipay, setShowAlipay] = useState(true);
 
   const fetchSubscription = useCallback(async () => {
     try {
@@ -88,17 +103,20 @@ export default function SubscriptionScreen() {
         return;
       }
 
-      const price = period === 'monthly' ? '15' : '144';
-      const periodText = period === 'monthly' ? '月付' : '年付（8折）';
+      const order = data.data.order;
+      const payInfo = data.data.payment_info;
 
-      Alert.alert(
-        '升级到专业版',
-        `订单已创建\n\n套餐：${periodText}\n金额：¥${price}\n订单号：${data.data.order.order_id}\n\n请通过以下方式支付：\n\n[支付宝/微信]\n请联系管理员确认开通`,
-        [
-          { text: '取消', style: 'cancel' },
-          { text: '我已支付', onPress: () => handleActivate(data.data.order.order_id) },
-        ]
-      );
+      setPaymentInfo({
+        order_id: order.order_id,
+        amount: payInfo.amount,
+        note: payInfo.note,
+        alipay_qrcode_url: payInfo.alipay_qrcode_url,
+        wechat_qrcode_url: payInfo.wechat_qrcode_url,
+        contact_info: payInfo.contact_info,
+        period: order.period,
+      });
+      setShowAlipay(true);
+      setPaymentModalVisible(true);
     } catch (err) {
       Alert.alert('错误', '网络请求失败');
     } finally {
@@ -106,22 +124,28 @@ export default function SubscriptionScreen() {
     }
   };
 
-  const handleActivate = async (orderId: string) => {
+  const handleConfirmPayment = async () => {
+    if (!paymentInfo) return;
+    setConfirming(true);
     try {
-      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/activate`, {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/confirm-payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: orderId }),
+        body: JSON.stringify({ order_id: paymentInfo.order_id }),
       });
       const data = await res.json();
       if (res.ok) {
-        Alert.alert('开通成功', '专业版已激活，感谢您的支持！');
+        setPaymentModalVisible(false);
+        setPaymentInfo(null);
+        Alert.alert('开通成功', '专业版已激活，感谢你的支持！');
         fetchSubscription();
       } else {
         Alert.alert('激活失败', data.error || '请联系管理员手动开通');
       }
     } catch {
       Alert.alert('错误', '网络请求失败');
+    } finally {
+      setConfirming(false);
     }
   };
 
@@ -281,7 +305,7 @@ export default function SubscriptionScreen() {
             </TouchableOpacity>
 
             <Text className="text-xs text-gray-400 text-center mt-3">
-              支付后请联系管理员确认开通，或稍后自动激活
+              扫码支付后点击确认，系统自动开通专业版
             </Text>
           </View>
         )}
@@ -304,11 +328,144 @@ export default function SubscriptionScreen() {
           <View className="mx-4 mt-4 bg-white rounded-2xl shadow-sm p-6">
             <Text className="text-base font-semibold text-gray-900 mb-2">子账号说明</Text>
             <Text className="text-sm text-gray-600 leading-5">
-              专业版主账号可创建不限数量的子账号。子账号按 ¥5/月/个 收费，费用已包含在专业版订阅中。
+              专业版主账号可创建不限数量的子账号
             </Text>
           </View>
         )}
       </ScrollView>
+
+      {/* Payment Modal */}
+      <Modal
+        visible={paymentModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPaymentModalVisible(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <View
+            className="bg-white rounded-t-3xl"
+            style={{ paddingBottom: insets.bottom + 20 }}
+          >
+            {/* handle */}
+            <View className="items-center pt-3 pb-2">
+              <View className="w-10 h-1 rounded-full bg-gray-300" />
+            </View>
+
+            <ScrollView className="px-6" style={{ maxHeight: '80%' }}>
+              {/* Title */}
+              <Text className="text-xl font-bold text-gray-900 text-center mb-1">
+                扫码支付
+              </Text>
+              <Text className="text-sm text-gray-500 text-center mb-6">
+                请使用支付宝或微信扫描下方二维码
+              </Text>
+
+              {/* Amount */}
+              <View className="items-center mb-6">
+                <Text className="text-sm text-gray-500">支付金额</Text>
+                <Text className="text-4xl font-bold text-gray-900 mt-1">
+                  ¥{paymentInfo?.amount || 0}
+                </Text>
+                <Text className="text-sm text-gray-400 mt-1">
+                  {paymentInfo?.note}
+                </Text>
+              </View>
+
+              {/* Payment method tabs */}
+              <View className="flex-row bg-gray-100 rounded-xl p-1 mb-6">
+                <TouchableOpacity
+                  className={`flex-1 py-2.5 rounded-lg items-center flex-row justify-center ${showAlipay ? 'bg-white shadow-sm' : ''}`}
+                  onPress={() => setShowAlipay(true)}
+                >
+                  <FontAwesome6 name="alipay" size={16} color="#1677FF" />
+                  <Text className={`text-sm font-medium ml-2 ${showAlipay ? 'text-indigo-600' : 'text-gray-500'}`}>
+                    支付宝
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className={`flex-1 py-2.5 rounded-lg items-center flex-row justify-center ${!showAlipay ? 'bg-white shadow-sm' : ''}`}
+                  onPress={() => setShowAlipay(false)}
+                >
+                  <FontAwesome6 name="weixin" size={16} color="#07C160" />
+                  <Text className={`text-sm font-medium ml-2 ${!showAlipay ? 'text-indigo-600' : 'text-gray-500'}`}>
+                    微信
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* QR Code */}
+              <View className="items-center mb-4">
+                {showAlipay && paymentInfo?.alipay_qrcode_url ? (
+                  <View className="w-52 h-52 bg-white rounded-2xl border-2 border-gray-100 items-center justify-center overflow-hidden">
+                    <Image
+                      source={{ uri: paymentInfo.alipay_qrcode_url }}
+                      style={{ width: 200, height: 200 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+                ) : !showAlipay && paymentInfo?.wechat_qrcode_url ? (
+                  <View className="w-52 h-52 bg-white rounded-2xl border-2 border-gray-100 items-center justify-center overflow-hidden">
+                    <Image
+                      source={{ uri: paymentInfo.wechat_qrcode_url }}
+                      style={{ width: 200, height: 200 }}
+                      resizeMode="contain"
+                    />
+                  </View>
+                ) : (
+                  <View className="w-52 h-52 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 items-center justify-center">
+                    <FontAwesome6 name="camera" size={40} color="#D1D5DB" />
+                    <Text className="text-sm text-gray-400 mt-3">请管理员配置收款码</Text>
+                    <Text className="text-xs text-gray-300 mt-1">{paymentInfo?.contact_info || '请联系管理员'}</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Order ID */}
+              <View className="bg-gray-50 rounded-xl px-4 py-3 mb-6">
+                <View className="flex-row justify-between">
+                  <Text className="text-xs text-gray-500">订单号</Text>
+                  <Text className="text-xs text-gray-700 font-mono">{paymentInfo?.order_id}</Text>
+                </View>
+                <View className="flex-row justify-between mt-1">
+                  <Text className="text-xs text-gray-500">支付方式</Text>
+                  <Text className="text-xs text-gray-700">{showAlipay ? '支付宝' : '微信'}</Text>
+                </View>
+              </View>
+
+              {/* Instructions */}
+              <View className="bg-amber-50 rounded-xl px-4 py-3 mb-6">
+                <Text className="text-xs text-amber-700 leading-5">
+                  1. 打开{showAlipay ? '支付宝' : '微信'}扫一扫功能{'\n'}
+                  2. 扫描上方二维码，支付 ¥{paymentInfo?.amount || 0}{'\n'}
+                  3. 支付完成后，点击下方「已付款，确认开通」按钮{'\n'}
+                  4. 系统将自动激活专业版
+                </Text>
+              </View>
+
+              {/* Confirm button */}
+              <TouchableOpacity
+                className={`bg-green-600 rounded-xl py-3.5 items-center ${confirming ? 'opacity-50' : ''}`}
+                onPress={handleConfirmPayment}
+                disabled={confirming}
+              >
+                {confirming ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text className="text-white font-semibold text-base">已付款，确认开通</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Cancel button */}
+              <TouchableOpacity
+                className="mt-3 py-3 items-center"
+                onPress={() => setPaymentModalVisible(false)}
+              >
+                <Text className="text-gray-400 text-sm">取消支付</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
