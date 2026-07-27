@@ -39,6 +39,17 @@ app.get('/api/v1/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+// Serve admin panel static files
+const publicPath = path.join(__dirname, '..', 'public');
+app.use('/admin', express.static(path.join(publicPath, 'admin')));
+// Serve privacy-policy.html from public root
+app.use(express.static(publicPath));
+
+// Redirect /admin to /admin/login.html
+app.get('/admin', (req, res) => {
+  res.redirect('/admin/login.html');
+});
+
 // Version check endpoint (public, no auth)
 // Compare against a stored version instead of relying on hardcoded app version
 app.get('/api/v1/version/check', async (req, res) => {

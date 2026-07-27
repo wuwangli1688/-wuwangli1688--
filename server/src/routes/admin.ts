@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { getSupabaseClient } from '../storage/database/supabase-client.js';
+import { getSupabaseClient, getSupabaseCredentials } from '../storage/database/supabase-client.js';
 
 const router = Router();
 
@@ -32,6 +32,16 @@ router.use(requireAdmin);
 // ============================================================
 // 1. 仪表盘总览统计
 // ============================================================
+// 获取Supabase配置（用于web管理后台登录）
+router.get('/config', async (req: Request, res: Response) => {
+  try {
+    const { url, anonKey } = getSupabaseCredentials();
+    res.json({ url, anonKey });
+  } catch (err) {
+    res.status(500).json({ error: '获取配置失败' });
+  }
+});
+
 router.get('/dashboard', async (req: Request, res: Response) => {
   try {
     const client = getSupabaseClient();
