@@ -632,6 +632,16 @@ function compareVersions(a: string, b: string): number {
         <View style={styles.actionsSection}>
           <Text style={styles.actionsTitle}>应用维护</Text>
 
+          {role === 'parent' && (
+          <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/admin")}>
+            <View style={[styles.actionIcon, { backgroundColor: "#FEE2E2" }]}>
+              <FontAwesome6 name="gauge" size={16} color="#DC2626" />
+            </View>
+            <Text style={styles.actionText}>管理后台</Text>
+            <FontAwesome6 name="chevron-right" size={14} color="#94A3B8" />
+          </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={styles.actionItem} onPress={() => router.push("/subscription")}>
             <View style={[styles.actionIcon, { backgroundColor: "#E0E7FF" }]}>
               <FontAwesome6 name="crown" size={16} color="#4F46E5" />

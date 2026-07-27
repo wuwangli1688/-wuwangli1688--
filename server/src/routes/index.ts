@@ -861,4 +861,9 @@ import subscriptionsRouter from "./subscriptions.js";
 // ==================== Subscriptions (订阅) ====================
 router.use("/subscriptions", subscriptionsRouter);
 
+import adminRouter from "./admin.js";
+
+// ==================== Admin (管理后台) ====================
+router.use("/admin", adminRouter);
+
 export default router;
