@@ -122,4 +122,25 @@ export async function createTables(): Promise<void> {
   }
 }
 
+/**
+ * Sync all auth.users to user_profiles - create entries for users without profiles
+ */
+export async function syncUsers(): Promise<void> {
+  const client = await getPool().connect();
+  try {
+    const result = await client.query(`
+      INSERT INTO user_profiles (id, display_name, role, platform)
+      SELECT a.id, SPLIT_PART(a.email, '@', 1), 'parent', 'app'
+      FROM auth.users a
+      LEFT JOIN user_profiles up ON a.id = up.id
+      WHERE up.id IS NULL
+    `);
+    console.log(`Synced ${result.rowCount} users to user_profiles`);
+  } catch (error) {
+    console.error('Error syncing users:', error);
+  } finally {
+    client.release();
+  }
+}
+
 export { getPool };

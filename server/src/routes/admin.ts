@@ -130,15 +130,18 @@ router.get('/users', async (req: Request, res: Response) => {
     const total = await queryCount(countSql, countParams);
     const users = await queryAll(sql, params);
 
-    // 获取每个用户的订阅、交易数、子账号数、门店数
+    // 获取每个用户的订阅、交易数、子账号数、门店数、活跃指数、标签、最近活跃时间
     const userIds = users.map((u: any) => u.id);
     const enrichedUsers = await Promise.all(userIds.map(async (uid: string) => {
-      const [subRows, txCount, subAccountCount, storeCount, weekTxCount] = await Promise.all([
+      const [subRows, txCount, subAccountCount, storeCount, weekTxCount, activityCount, tags, lastActive] = await Promise.all([
         queryOne('SELECT plan_type, status, expires_at, sub_account_limit, store_limit FROM subscriptions WHERE user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM transactions WHERE user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM user_profiles WHERE parent_user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM stores WHERE owner_id = $1', [uid]),
         queryCount('SELECT count(*) FROM transactions WHERE user_id = $1 AND created_at >= $2', [uid, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()]),
+        queryCount('SELECT count(*) FROM activity_logs WHERE user_id = $1 AND created_at >= $2', [uid, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()]),
+        queryAll('SELECT tag FROM user_tags WHERE user_id = $1', [uid]),
+        queryOne('SELECT MAX(created_at) as last_active FROM activity_logs WHERE user_id = $1', [uid]),
       ]);
 
       const user = users.find((u: any) => u.id === uid);
@@ -149,6 +152,9 @@ router.get('/users', async (req: Request, res: Response) => {
         weekTxCount,
         subAccountCount,
         storeCount,
+        activity_index: parseInt(activityCount) + parseInt(weekTxCount),
+        tags: (tags || []).map((t: any) => t.tag).join(','),
+        last_active: lastActive?.last_active || null,
       };
     }));
 

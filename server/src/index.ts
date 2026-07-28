@@ -146,8 +146,8 @@ app.use('/api/v1', apiRouter);
 app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
 
 // Initialize database tables asynchronously
-import { createTables } from './storage/database/direct-connection.js';
-createTables().catch(err => console.error('Failed to initialize tables:', err));
+import { createTables, syncUsers } from './storage/database/direct-connection.js';
+createTables().then(() => syncUsers()).catch(err => console.error('Failed to initialize tables:', err));
 
 app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}/`);
