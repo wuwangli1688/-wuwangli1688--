@@ -11,8 +11,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .header h1 { font-size: 18px; }
 .header .user-info { font-size: 13px; opacity: 0.8; }
 .header .logout-btn { background: none; border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-left: 12px; }
-.tabs { display: flex; background: #fff; border-bottom: 1px solid #e0e0e0; padding: 0 24px; }
-.tab-btn { padding: 14px 24px; border: none; background: none; font-size: 14px; color: #666; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.tabs { display: flex; background: #fff; border-bottom: 1px solid #e0e0e0; padding: 0 24px; overflow-x: auto; }
+.tab-btn { padding: 14px 24px; border: none; background: none; font-size: 14px; color: #666; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; }
 .tab-btn.active { color: #1a1a2e; border-bottom-color: #302b63; font-weight: 600; }
 .tab-btn:hover { color: #1a1a2e; }
 .content { padding: 24px; max-width: 1400px; margin: 0 auto; }
@@ -32,6 +32,7 @@ table { width: 100%; border-collapse: collapse; }
 th { background: #f8f9fa; padding: 12px 16px; text-align: left; font-size: 13px; color: #666; font-weight: 600; border-bottom: 1px solid #e0e0e0; }
 td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
 tr:hover td { background: #f8f9ff; }
+tr.clickable { cursor: pointer; }
 .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
 .badge-pro { background: #e8f5e9; color: #2e7d32; }
 .badge-free { background: #f5f5f5; color: #666; }
@@ -48,23 +49,30 @@ tr:hover td { background: #f8f9ff; }
 /* Form */
 .form-group { margin-bottom: 16px; }
 .form-group label { display: block; font-size: 14px; color: #555; margin-bottom: 6px; font-weight: 500; }
-.form-group input, .form-group textarea { width: 100%; padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; }
-.form-group input:focus, .form-group textarea:focus { border-color: #302b63; }
+.form-group input, .form-group textarea, .form-group select { width: 100%; padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; }
+.form-group input:focus, .form-group textarea:focus, .form-group select:focus { border-color: #302b63; }
 .form-group textarea { min-height: 80px; resize: vertical; }
 
 /* Search */
-.search-bar { margin-bottom: 16px; display: flex; gap: 12px; align-items: center; }
-.search-bar input { flex: 1; padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; max-width: 300px; }
+.search-bar { margin-bottom: 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.search-bar input { flex: 1; padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; max-width: 300px; min-width: 180px; }
 .search-bar input:focus { border-color: #302b63; }
 .search-bar select { padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; }
+.search-bar .search-hint { font-size: 12px; color: #999; }
 
 /* Modal */
 .modal-overlay { display: none; position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
 .modal-overlay.active { display: flex; }
-.modal { background: #fff; border-radius: 16px; padding: 24px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; }
+.modal { background: #fff; border-radius: 16px; padding: 24px; width: 90%; max-width: 700px; max-height: 85vh; overflow-y: auto; }
 .modal h2 { font-size: 18px; margin-bottom: 20px; }
+.modal h3 { font-size: 15px; margin: 16px 0 12px; color: #333; }
+.modal .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+.modal .info-row .label { color: #888; }
+.modal .info-row .value { font-weight: 500; color: #333; }
 .modal .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
 .modal .actions .btn { padding: 10px 24px; }
+.modal .close-btn { float: right; background: none; border: none; font-size: 22px; color: #999; cursor: pointer; padding: 0 4px; }
+.modal .close-btn:hover { color: #333; }
 
 /* Section title */
 .section-title { font-size: 16px; font-weight: 600; color: #1a1a2e; margin-bottom: 16px; }
@@ -81,6 +89,17 @@ tr:hover td { background: #f8f9ff; }
 .config-card h3 { font-size: 15px; margin-bottom: 16px; color: #1a1a2e; }
 .preview-img { max-width: 200px; max-height: 200px; margin-top: 8px; border-radius: 8px; border: 1px solid #eee; }
 .success-msg { background: #e8f5e9; color: #2e7d32; padding: 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
+.error-msg { background: #ffebee; color: #c62828; padding: 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
+
+/* Search results */
+.search-results { margin-top: 8px; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .config-grid { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .search-bar input { max-width: 100%; }
+}
 </style>
 </head>
 <body>
@@ -115,12 +134,10 @@ tr:hover td { background: #f8f9ff; }
 <!-- 用户管理 -->
 <div class="tab-content" id="tab-users">
   <div class="search-bar">
-    <input type="text" id="userSearch" placeholder="搜索用户名/邮箱..." oninput="loadUsers()">
-    <select id="subFilter" onchange="loadUsers()">
-      <option value="">全部</option>
-      <option value="free">免费版</option>
-      <option value="pro">专业版</option>
-    </select>
+    <input type="text" id="userSearch" placeholder="搜索用户名/ID..." onkeyup="if(event.key==='Enter'){ currentPage.users=1;loadUsers(); }">
+    <button class="btn btn-primary" onclick="currentPage.users=1;loadUsers()">🔍 搜索</button>
+    <button class="btn btn-outline" onclick="document.getElementById('userSearch').value='';currentPage.users=1;loadUsers()">清除</button>
+    <span class="search-hint">支持按用户名或ID搜索</span>
   </div>
   <div class="table-container">
     <table>
@@ -134,11 +151,13 @@ tr:hover td { background: #f8f9ff; }
 <!-- 订单管理 -->
 <div class="tab-content" id="tab-orders">
   <div class="search-bar">
-    <select id="orderFilter" onchange="loadOrders()">
+    <select id="orderFilter" onchange="currentPage.orders=1;loadOrders()">
       <option value="">全部</option>
       <option value="pending">待付款</option>
       <option value="paid">已付款</option>
     </select>
+    <input type="text" id="orderSearch" placeholder="搜索订单号/用户ID..." onkeyup="if(event.key==='Enter'){ currentPage.orders=1;loadOrders(); }" style="max-width:250px;">
+    <button class="btn btn-primary" onclick="currentPage.orders=1;loadOrders()">🔍 搜索</button>
   </div>
   <div class="table-container">
     <table>
@@ -192,9 +211,22 @@ tr:hover td { background: #f8f9ff; }
 
 </div>
 
+<!-- 用户详情 Modal -->
+<div class="modal-overlay" id="userDetailModal">
+  <div class="modal">
+    <button class="close-btn" onclick="closeUserDetail()">✕</button>
+    <h2 id="detailTitle">用户详情</h2>
+    <div id="detailContent"></div>
+    <div class="actions">
+      <button class="btn btn-outline" onclick="closeUserDetail()">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 编辑订阅 Modal -->
 <div class="modal-overlay" id="editModal">
   <div class="modal">
+    <button class="close-btn" onclick="closeEditModal()">✕</button>
     <h2>编辑订阅</h2>
     <div class="form-group"><label>用户</label><input type="text" id="editUserEmail" disabled></div>
     <div class="form-group"><label>订阅方案</label>
@@ -227,14 +259,6 @@ async function apiFetch(url, options = {}) {
   return res;
 }
 
-async function apiFetchRaw(url, options = {}) {
-  const token = getToken();
-  if (!token) { window.location.href = 'login.html'; return; }
-  const res = await fetch(url, { ...options, headers: { ...options.headers, 'X-Admin-Token': token } });
-  if (res.status === 401) { localStorage.removeItem('admin_token'); window.location.href = 'login.html'; }
-  return res;
-}
-
 // Tab switching
 function switchTab(name) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -263,9 +287,9 @@ async function loadDashboard() {
   `;
   if (data.users) {
     document.getElementById('userStatsBody').innerHTML = data.users.map(u => `
-      <tr>
+      <tr class="clickable" onclick="showUserDetail('${u.id}')">
         <td><strong>${u.username || '未设置'}</strong></td>
-        <td>${u.email}</td>
+        <td>${u.email || '-'}</td>
         <td>${u.subAccountCount || 0}</td>
         <td>${u.storeCount || 0}</td>
         <td>${u.weekTransactions || 0}</td>
@@ -278,21 +302,22 @@ async function loadDashboard() {
 
 // Users
 async function loadUsers() {
-  const search = document.getElementById('userSearch').value;
-  const filter = document.getElementById('subFilter').value;
+  const search = document.getElementById('userSearch').value.trim();
   const page = currentPage.users;
-  const res = await apiFetch(API + '/users?page=' + page + '&limit=20&search=' + encodeURIComponent(search) + '&plan=' + filter);
+  let url = API + '/users?page=' + page + '&limit=20';
+  if (search) url += '&search=' + encodeURIComponent(search);
+  const res = await apiFetch(url);
   if (!res) return;
   const data = await res.json();
   document.getElementById('usersBody').innerHTML = (data.users || []).map(u => `
-    <tr>
+    <tr class="clickable" onclick="showUserDetail('${u.id}')">
       <td><strong>${u.username || '未设置'}</strong></td>
-      <td>${u.email}</td>
+      <td>${u.email || '-'}</td>
       <td>${u.role === 'parent' ? '👑 主账号' : '👤 子账号'}</td>
       <td>${u.subAccountCount || 0}</td>
       <td>${u.storeCount || 0}</td>
       <td><span class="badge ${u.plan === 'pro' ? 'badge-pro' : 'badge-free'}">${u.plan === 'pro' ? '专业版' : '免费版'}</span></td>
-      <td><button class="btn btn-sm btn-primary" onclick="openEditModal('${u.id}','${u.email}','${u.plan}')">编辑</button></td>
+      <td><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openEditModal('${u.id}','${u.email || ''}','${u.plan}')">编辑订阅</button></td>
     </tr>
   `).join('');
   renderPagination('usersPagination', data.total, page, (p) => { currentPage.users = p; loadUsers(); });
@@ -301,18 +326,21 @@ async function loadUsers() {
 // Orders
 async function loadOrders() {
   const filter = document.getElementById('orderFilter').value;
+  const search = document.getElementById('orderSearch').value.trim();
   const page = currentPage.orders;
-  const res = await apiFetch(API + '/orders?page=' + page + '&limit=20&status=' + filter);
+  let url = API + '/orders?page=' + page + '&limit=20&status=' + filter;
+  if (search) url += '&search=' + encodeURIComponent(search);
+  const res = await apiFetch(url);
   if (!res) return;
   const data = await res.json();
   document.getElementById('ordersBody').innerHTML = (data.orders || []).map(o => `
     <tr>
-      <td style="font-size:12px;color:#888;">${o.order_id || o.id?.substring(0,8)}</td>
-      <td>${o.user_email || o.user_id?.substring(0,8)}</td>
+      <td style="font-size:12px;color:#888;font-family:monospace;">${o.order_id || o.id?.substring(0,12)}</td>
+      <td style="font-family:monospace;font-size:12px;">${o.user_email || o.user_id?.substring(0,12)}</td>
       <td>${o.plan_type === 'pro' ? '专业版' : o.plan_type} ${o.period === 'year' ? '(年付)' : '(月付)'}</td>
       <td><strong>¥${o.amount}</strong></td>
       <td><span class="badge ${o.status === 'paid' ? 'badge-paid' : 'badge-pending'}">${o.status === 'paid' ? '已付款' : '待付款'}</span></td>
-      <td style="font-size:12px;color:#888;">${o.created_at ? new Date(o.created_at).toLocaleString() : '-'}</td>
+      <td style="font-size:12px;color:#888;">${o.created_at ? new Date(o.created_at).toLocaleString('zh-CN') : '-'}</td>
       <td>${o.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="confirmOrder('${o.id}')">确认收款</button>` : '-'}</td>
     </tr>
   `).join('');
@@ -327,10 +355,10 @@ async function loadFeedbacks() {
   const data = await res.json();
   document.getElementById('feedbacksBody').innerHTML = (data.feedbacks || []).map(f => `
     <tr>
-      <td>${f.email || f.user_id?.substring(0,8)}</td>
-      <td style="max-width:300px;">${f.content}</td>
+      <td style="font-family:monospace;font-size:12px;">${f.email || f.user_id?.substring(0,12)}</td>
+      <td style="max-width:300px;word-break:break-all;">${f.content}</td>
       <td>${f.contact || '-'}</td>
-      <td style="font-size:12px;color:#888;">${f.created_at ? new Date(f.created_at).toLocaleString() : '-'}</td>
+      <td style="font-size:12px;color:#888;">${f.created_at ? new Date(f.created_at).toLocaleString('zh-CN') : '-'}</td>
     </tr>
   `).join('');
   renderPagination('feedbacksPagination', data.total, page, (p) => { currentPage.feedbacks = p; loadFeedbacks(); });
@@ -372,10 +400,86 @@ async function savePaymentConfig() {
   }
 }
 
+// User Detail
+async function showUserDetail(userId) {
+  document.getElementById('userDetailModal').classList.add('active');
+  document.getElementById('detailContent').innerHTML = '<div style="text-align:center;padding:40px;color:#999;">⏳ 加载中...</div>';
+
+  const res = await apiFetch(API + '/users/' + userId);
+  if (!res) return;
+  const data = await res.json();
+  const u = data.user;
+
+  const planLabel = u.subscription?.plan_type === 'pro' ? '专业版' : '免费版';
+  const planBadge = u.subscription?.plan_type === 'pro' ? 'badge-pro' : 'badge-free';
+  const subEnd = u.subscription?.end_date ? new Date(u.subscription.end_date).toLocaleDateString('zh-CN') : '-';
+
+  let childrenHtml = '';
+  if (u.children && u.children.length > 0) {
+    childrenHtml = u.children.map(c => `
+      <div class="info-row">
+        <span class="label">${c.display_name || '未命名'}</span>
+        <span class="value">${c.role === 'parent' ? '主账号' : '子账号'} · ${new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
+      </div>
+    `).join('');
+  } else {
+    childrenHtml = '<div class="info-row"><span class="label" style="color:#999;">暂无子账号</span></div>';
+  }
+
+  let ordersHtml = '';
+  if (u.orders && u.orders.length > 0) {
+    ordersHtml = u.orders.map(o => `
+      <div class="info-row">
+        <span class="label">${o.plan_type === 'pro' ? '专业版' : o.plan_type} ${o.period === 'year' ? '(年付)' : '(月付)'} · ¥${o.amount}</span>
+        <span class="value"><span class="badge ${o.status === 'paid' ? 'badge-paid' : 'badge-pending'}">${o.status === 'paid' ? '已付款' : '待付款'}</span> ${new Date(o.created_at).toLocaleDateString('zh-CN')}</span>
+      </div>
+    `).join('');
+  } else {
+    ordersHtml = '<div class="info-row"><span class="label" style="color:#999;">暂无订单记录</span></div>';
+  }
+
+  document.getElementById('detailTitle').textContent = '👤 ' + (u.display_name || '用户详情');
+  document.getElementById('detailContent').innerHTML = `
+    <div style="display:flex;gap:24px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:200px;">
+        <h3>基本信息</h3>
+        <div class="info-row"><span class="label">用户ID</span><span class="value" style="font-family:monospace;font-size:12px;">${u.id}</span></div>
+        <div class="info-row"><span class="label">用户名</span><span class="value">${u.display_name || '未设置'}</span></div>
+        <div class="info-row"><span class="label">角色</span><span class="value">${u.role === 'parent' ? '👑 主账号' : '👤 子账号'}</span></div>
+        <div class="info-row"><span class="label">注册时间</span><span class="value">${u.created_at ? new Date(u.created_at).toLocaleString('zh-CN') : '-'}</span></div>
+      </div>
+      <div style="flex:1;min-width:200px;">
+        <h3>订阅信息</h3>
+        <div class="info-row"><span class="label">当前方案</span><span class="value"><span class="badge ${planBadge}">${planLabel}</span></span></div>
+        <div class="info-row"><span class="label">到期时间</span><span class="value">${subEnd}</span></div>
+        <div class="info-row"><span class="label">多店铺</span><span class="value">${u.subscription?.extra_stores || 0} 个额外店铺</span></div>
+        <div class="info-row"><span class="label">门店数</span><span class="value">${u.storeCount || 0}</span></div>
+      </div>
+      <div style="flex:1;min-width:200px;">
+        <h3>使用统计</h3>
+        <div class="info-row"><span class="label">总交易</span><span class="value">${u.txCount || 0} 笔</span></div>
+        <div class="info-row"><span class="label">本周交易</span><span class="value">${u.weekTxCount || 0} 笔</span></div>
+        <div class="info-row"><span class="label">子账号数</span><span class="value">${u.children?.length || 0}</span></div>
+      </div>
+    </div>
+    <h3>子账号 (${u.children?.length || 0})</h3>
+    ${childrenHtml}
+    <h3>订单记录 (${u.orders?.length || 0})</h3>
+    ${ordersHtml}
+    <div class="actions" style="margin-top:16px;">
+      <button class="btn btn-primary" onclick="closeUserDetail();openEditModal('${u.id}','${u.display_name || ''}','${u.subscription?.plan_type || 'free'}')">编辑订阅</button>
+    </div>
+  `;
+}
+
+function closeUserDetail() {
+  document.getElementById('userDetailModal').classList.remove('active');
+}
+
 // Edit Subscription Modal
-function openEditModal(id, email, plan) {
+function openEditModal(id, name, plan) {
   document.getElementById('editModal').classList.add('active');
-  document.getElementById('editUserEmail').value = email;
+  document.getElementById('editUserEmail').value = name;
   document.getElementById('editPlan').value = plan;
   document.getElementById('editModal').dataset.userId = id;
 }
@@ -395,6 +499,8 @@ async function saveUserSubscription() {
     closeEditModal();
     loadUsers();
     loadDashboard();
+  } else {
+    alert('保存失败，请重试');
   }
 }
 
@@ -413,19 +519,14 @@ function renderPagination(containerId, total, current, callback) {
   const el = document.getElementById(containerId);
   const pages = Math.ceil(total / 20);
   if (pages <= 1) { el.innerHTML = ''; return; }
-  let html = `<button ${current <= 1 ? 'disabled' : ''} onclick="callback(${current-1})">‹</button>`;
+  const callbackStr = 'paginationCallback_' + containerId;
+  window[callbackStr] = callback;
+  let html = `<button ${current <= 1 ? 'disabled' : ''} onclick="window['${callbackStr}'](${current-1})">‹</button>`;
   for (let i = Math.max(1, current-2); i <= Math.min(pages, current+2); i++) {
-    html += `<button class="${i === current ? 'active' : ''}" onclick="callback(${i})">${i}</button>`;
+    html += `<button class="${i === current ? 'active' : ''}" onclick="window['${callbackStr}'](${i})">${i}</button>`;
   }
-  html += `<button ${current >= pages ? 'disabled' : ''} onclick="callback(${current+1})">›</button>`;
+  html += `<button ${current >= pages ? 'disabled' : ''} onclick="window['${callbackStr}'](${current+1})">›</button>`;
   el.innerHTML = html;
-  // Re-bind events
-  el.querySelectorAll('button:not([disabled])').forEach(btn => {
-    const match = btn.getAttribute('onclick')?.match(/callback\((\d+)\)/);
-    if (match) {
-      btn.onclick = () => callback(parseInt(match[1]));
-    }
-  });
 }
 
 // Logout
