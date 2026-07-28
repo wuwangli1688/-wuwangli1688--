@@ -160,14 +160,19 @@ let currentPage = 1, totalUsers = 0;
 function logout() { localStorage.removeItem('admin_token'); window.location.href = 'login.html'; }
 
 async function apiFetch(url, opts = {}) {
-  const headers = { ...opts.headers };
-  headers['X-Admin-Token'] = token;
-  if (!(opts.body instanceof FormData) && opts.body && typeof opts.body === 'object') {
-    headers['Content-Type'] = 'application/json';
+  try {
+    const headers = { ...opts.headers };
+    headers['X-Admin-Token'] = token;
+    if (!(opts.body instanceof FormData) && opts.body && typeof opts.body === 'object') {
+      headers['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(url, { ...opts, headers });
+    if (res.status === 401) { logout(); return null; }
+    return res.json();
+  } catch(e) {
+    console.error('API请求失败:', e);
+    return null;
   }
-  const res = await fetch(url, { ...opts, headers });
-  if (res.status === 401) { logout(); return null; }
-  return res.json();
 }
 
 function encodeName(name) {
@@ -198,7 +203,10 @@ function getBadge(sub) {
 // === Dashboard ===
 async function loadDashboard() {
   const data = await apiFetch(API + '/dashboard');
-  if (!data) return;
+  if (!data) {
+    document.getElementById('statsRow').innerHTML = '<div class="stat-box" style="grid-column:1/-1;text-align:center;color:#c00;">数据加载失败</div>';
+    return;
+  }
   const html = `
     <div class="stat-box"><div class="label">总用户</div><div class="num">${data.totalUsers}</div></div>
     <div class="stat-box"><div class="label">主账号</div><div class="num">${data.parentUsers}</div></div>
@@ -289,12 +297,12 @@ function renderTable(users, total, limit, sort) {
         <td colspan="9" style="padding:0;">
           <div class="children-wrap" style="padding:8px 12px;background:#fafbff;">
             <div style="font-size:11px;color:#999;margin-bottom:4px;">子账号列表：</div>
-            ${children.map((c: any) => `
+            ${children.map(function(c) { return `
               <div class="child-item" style="display:flex;gap:12px;padding:2px 0;">
                 <span>${encodeName(c.display_name || c.login_name || '-')}</span>
                 <span style="color:#999;font-size:11px;">${c.plan_type === 'pro' ? '专业版' : '免费'}</span>
               </div>
-            `).join('')}
+            `; }).join('')}
           </div>
         </td>
       </tr>`;
@@ -349,7 +357,7 @@ function sortBy(type) {
 // === User Detail ===
 async function showUserDetail(userId) {
   const data = await apiFetch(`${API}/users/${userId}`);
-  if (!data) return;
+  if (!data || !data.id) return;
   
   const u = data;
   const loginName = encodeName(u.login_name || u.display_name || '-');
@@ -377,12 +385,12 @@ async function showUserDetail(userId) {
     ${children.length > 0 ? `
     <div style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f0f0;">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px;">子账号列表</div>
-      ${children.map((c: any) => `
+      ${children.map(function(c) { return `
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #f5f5f5;">
           <span>${encodeName(c.display_name || c.login_name || '-')}</span>
           <span style="color:#999;font-size:11px;">${c.plan_type === 'pro' ? '专业版' : '免费'}</span>
         </div>
-      `).join('')}
+      `; }).join('')}
     </div>` : ''}
     
     ${u.last_active ? '' : '<div style="margin-top:12px;padding:8px 12px;background:#fff3e0;border-radius:6px;font-size:12px;color:#e65100;">⚠️ 该用户可能为僵尸号（无活跃记录）</div>'}
@@ -484,8 +492,13 @@ function debouncedLoad() {
 async function init() {
   if (!token) { window.location.href = 'login.html'; return; }
   document.getElementById('userInfo').textContent = '管理员';
-  await loadDashboard();
-  await loadUsers();
+  try {
+    await loadDashboard();
+    await loadUsers();
+  } catch(e) {
+    console.error('初始化失败:', e);
+    document.getElementById('tableContent').innerHTML = '<div class="empty" style="color:#c00;">数据加载失败，请检查网络或刷新重试</div>';
+  }
 }
 
 init();

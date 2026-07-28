@@ -719,17 +719,33 @@ router.get('/users/:id', async (req: Request, res: Response) => {
       [id]
     );
 
-    res.json({
-      user: {
-        ...user,
-        subscription: subscription || null,
-        txCount,
-        weekTxCount,
-        storeCount,
-        children,
-        orders,
-      },
-    });
+    // 获取活跃指数、标签、最近活跃时间
+    const activityCount = await queryCount(
+      'SELECT count(*) FROM activity_logs WHERE user_id = $1 AND created_at >= $2',
+      [id, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()]
+    );
+    const tags = await queryAll('SELECT tag FROM user_tags WHERE user_id = $1', [id]);
+    const lastActive = await queryOne(
+      'SELECT MAX(created_at) as last_active FROM activity_logs WHERE user_id = $1',
+      [id]
+    );
+    const subAccountCount = await queryCount('SELECT count(*) FROM user_profiles WHERE parent_user_id = $1', [id]);
+
+    const enrichedUser = {
+      ...user,
+      subscription: subscription || null,
+      txCount,
+      weekTxCount,
+      storeCount,
+      children,
+      subAccountCount,
+      orders,
+      activity_index: parseInt(activityCount) + parseInt(weekTxCount),
+      tags: (tags || []).map((t: any) => t.tag).join(','),
+      last_active: lastActive?.last_active || null,
+    };
+
+    res.json(enrichedUser);
   } catch (error) {
     console.error('获取用户详情失败:', error);
     res.status(500).json({ error: '获取用户详情失败' });
