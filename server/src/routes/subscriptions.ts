@@ -400,4 +400,370 @@ router.post('/confirm-payment', async (req: AuthenticatedRequest, res: Response)
   }
 });
 
+// ==================== New APIs for Account Management ====================
+
+// GET /api/v1/subscriptions/orders - Get current user's orders
+router.get('/orders', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const client = getSupabaseClient();
+    const userId = req.userId!;
+
+    const { data: orders, error } = await client
+      .from('subscription_orders')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+    res.json({ data: orders || [] });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// GET /api/v1/subscriptions/my-accounts - Main account gets all sub-accounts with their subscription info
+router.get('/my-accounts', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const client = getSupabaseClient();
+    const userId = req.userId!;
+
+    // Get user profile to check role
+    const { data: profile } = await client
+      .from('user_profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (!profile || profile.role !== 'parent') {
+      return res.status(403).json({ error: '仅主账号可查看子账号信息' });
+    }
+
+    // Get all sub-accounts
+    const { data: subAccounts } = await client
+      .from('user_profiles')
+      .select('*')
+      .eq('parent_user_id', userId)
+      .eq('role', 'child');
+
+    // Get their subscriptions
+    const subIds = (subAccounts || []).map(s => s.id);
+    const subscriptionsMap: Record<string, any> = {};
+
+    if (subIds.length > 0) {
+      const { data: subs } = await client
+        .from('subscriptions')
+        .select('*')
+        .in('user_id', subIds);
+
+      for (const sub of subs || []) {
+        subscriptionsMap[sub.user_id] = sub;
+      }
+    }
+
+    // Get transaction counts for usage
+    const accounts = await Promise.all((subAccounts || []).map(async (acc) => {
+      const { count: txCount } = await client
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', acc.id);
+
+      const sub = subscriptionsMap[acc.id];
+      const plan = sub ? PLANS[sub.plan_type as keyof typeof PLANS] || PLANS.free : PLANS.free;
+
+      return {
+        ...acc,
+        subscription: sub ? { ...sub, plan_info: plan } : { plan_type: 'free', status: 'active', plan_info: PLANS.free },
+        usage: { transactions: txCount || 0 },
+      };
+    }));
+
+    res.json({ data: accounts });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/v1/subscriptions/purchase-multi-store - Purchase multi-store addon
+router.post('/purchase-multi-store', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const client = getSupabaseClient();
+
+    // Check user is main account
+    const { data: profile } = await client
+      .from('user_profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (!profile || profile.role !== 'parent') {
+      return res.status(403).json({ error: '仅主账号可购买多店铺功能' });
+    }
+
+    // Get or create subscription
+    const subscription = await getOrCreateSubscription(client, userId);
+
+    const multiStorePrice = 10; // ¥10/month for multi-store
+    const orderId = `MSTORE_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    // Create order
+    const { data: order, error } = await client
+      .from('subscription_orders')
+      .insert({
+        order_id: orderId,
+        user_id: userId,
+        plan_type: 'multi_store',
+        period: 'monthly',
+        amount: multiStorePrice,
+        status: 'pending',
+        description: '多店铺功能-月付',
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Get payment config
+    const { data: payConfig } = await client
+      .from('payment_config')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
+    res.json({
+      data: {
+        order,
+        payment_info: {
+          method: 'qrcode',
+          amount: multiStorePrice,
+          note: '即时记账-多店铺功能',
+          alipay_qrcode_url: payConfig?.alipay_qrcode_url || null,
+          wechat_qrcode_url: payConfig?.wechat_qrcode_url || null,
+          contact_info: payConfig?.contact_info || '请联系管理员',
+        },
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/v1/subscriptions/purchase-sub-upgrade - Main account purchases upgrade for a sub-account
+router.post('/purchase-sub-upgrade', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { sub_account_id } = req.body;
+    const userId = req.userId!;
+    const client = getSupabaseClient();
+
+    if (!sub_account_id) {
+      return res.status(400).json({ error: '请指定子账号' });
+    }
+
+    // Check user is main account
+    const { data: profile } = await client
+      .from('user_profiles')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (!profile || profile.role !== 'parent') {
+      return res.status(403).json({ error: '仅主账号可操作' });
+    }
+
+    // Verify sub-account belongs to this main account
+    const { data: subAccount } = await client
+      .from('user_profiles')
+      .select('*')
+      .eq('id', sub_account_id)
+      .eq('parent_user_id', userId)
+      .single();
+
+    if (!subAccount) {
+      return res.status(404).json({ error: '子账号不存在或不属于您' });
+    }
+
+    const subPrice = 5; // ¥5/month per sub-account
+    const orderId = `SUBUP_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    // Create order for the sub-account
+    const { data: order, error } = await client
+      .from('subscription_orders')
+      .insert({
+        order_id: orderId,
+        user_id: sub_account_id,
+        purchaser_id: userId,
+        plan_type: 'pro',
+        period: 'monthly',
+        amount: subPrice,
+        status: 'pending',
+        description: `主账号为子账号升级-专业版`,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Get payment config
+    const { data: payConfig } = await client
+      .from('payment_config')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+
+    res.json({
+      data: {
+        order,
+        sub_account: { id: subAccount.id, nickname: subAccount.nickname },
+        payment_info: {
+          method: 'qrcode',
+          amount: subPrice,
+          note: `即时记账-子账号升级-${subAccount.nickname || sub_account_id}`,
+          alipay_qrcode_url: payConfig?.alipay_qrcode_url || null,
+          wechat_qrcode_url: payConfig?.wechat_qrcode_url || null,
+          contact_info: payConfig?.contact_info || '请联系管理员',
+        },
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/v1/subscriptions/confirm-multi-store - Confirm multi-store payment
+router.post('/confirm-multi-store', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { order_id } = req.body;
+    const userId = req.userId!;
+    const client = getSupabaseClient();
+
+    const { data: order, error: findError } = await client
+      .from('subscription_orders')
+      .select('*')
+      .eq('order_id', order_id)
+      .single();
+
+    if (findError || !order) {
+      return res.status(404).json({ error: '订单不存在' });
+    }
+
+    if (order.user_id !== userId) {
+      return res.status(403).json({ error: '无权操作该订单' });
+    }
+
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: '订单已处理' });
+    }
+
+    const now = new Date().toISOString();
+    await client
+      .from('subscription_orders')
+      .update({ status: 'paid', paid_at: now, activated_at: now })
+      .eq('order_id', order_id);
+
+    // Update subscription: increase store limit
+    const { data: existingSub } = await client
+      .from('subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (existingSub) {
+      const newLimit = (existingSub.store_limit || 1) + 999;
+      await client
+        .from('subscriptions')
+        .update({
+          store_limit: newLimit,
+          updated_at: now,
+        })
+        .eq('id', existingSub.id);
+    }
+
+    res.json({ data: { success: true, message: '多店铺功能已开通！' } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/v1/subscriptions/confirm-sub-upgrade - Confirm sub-account upgrade payment
+router.post('/confirm-sub-upgrade', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { order_id } = req.body;
+    const userId = req.userId!;
+    const client = getSupabaseClient();
+
+    const { data: order, error: findError } = await client
+      .from('subscription_orders')
+      .select('*')
+      .eq('order_id', order_id)
+      .single();
+
+    if (findError || !order) {
+      return res.status(404).json({ error: '订单不存在' });
+    }
+
+    // Verify either the user or the purchaser can confirm
+    if (order.user_id !== userId && order.purchaser_id !== userId) {
+      return res.status(403).json({ error: '无权操作该订单' });
+    }
+
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: '订单已处理' });
+    }
+
+    const now = new Date().toISOString();
+    await client
+      .from('subscription_orders')
+      .update({ status: 'paid', paid_at: now, activated_at: now })
+      .eq('order_id', order_id);
+
+    // Activate pro for the sub-account
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+    const { data: existingSub } = await client
+      .from('subscriptions')
+      .select('*')
+      .eq('user_id', order.user_id)
+      .maybeSingle();
+
+    if (existingSub) {
+      await client
+        .from('subscriptions')
+        .update({
+          plan_type: 'pro',
+          status: 'active',
+          sub_account_limit: 9999,
+          store_limit: 9999,
+          started_at: now,
+          expires_at: expiresAt.toISOString(),
+          updated_at: now,
+        })
+        .eq('id', existingSub.id);
+    } else {
+      await client
+        .from('subscriptions')
+        .insert({
+          user_id: order.user_id,
+          plan_type: 'pro',
+          status: 'active',
+          sub_account_limit: 9999,
+          store_limit: 9999,
+          started_at: now,
+          expires_at: expiresAt.toISOString(),
+        });
+    }
+
+    res.json({ data: { success: true, message: '子账号升级成功！' } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
 export default router;

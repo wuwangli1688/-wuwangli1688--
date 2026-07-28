@@ -95,7 +95,6 @@ export default function RootLayout() {
             <Stack.Screen name="category-detail" options={{ title: "分类明细" }} />
             <Stack.Screen name="edit-transaction" options={{ title: "编辑记录" }} />
             <Stack.Screen name="subscription" options={{ title: "订阅管理" }} />
-            <Stack.Screen name="payment-config" options={{ title: "支付配置" }} />
             
             <Stack.Screen name="(tabs)" options={{ title: "" }} />
           </Stack>

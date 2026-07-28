@@ -357,6 +357,7 @@
         <option value="pro">专业版</option>
       </select>
       <button class="btn-refresh" onclick="loadDashboard(); loadUsers();">🔄 刷新</button>
+      <button class="btn-refresh" onclick="openPaymentConfig()" style="background:#7c3aed;color:#fff;border:none;">💳 支付配置</button>
     </div>
 
     <!-- 用户表格 -->
@@ -380,6 +381,30 @@
         </tbody>
       </table>
       <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+
+  <!-- 支付配置 Modal -->
+  <div class="modal-overlay" id="paymentConfigModal">
+    <div class="modal">
+      <h2>💳 支付配置</h2>
+      <p class="modal-sub">设置收款二维码，用户付款时展示</p>
+      <div class="form-group">
+        <label>支付宝收款码（图片链接）</label>
+        <input type="text" id="alipayQrcodeUrl" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>微信收款码（图片链接）</label>
+        <input type="text" id="wechatQrcodeUrl" placeholder="https://...">
+      </div>
+      <div class="form-group">
+        <label>联系信息</label>
+        <input type="text" id="contactInfo" placeholder="微信号或手机号">
+      </div>
+      <div class="btn-row">
+        <button class="btn-cancel" onclick="closePaymentConfigModal()">取消</button>
+        <button class="btn-save" onclick="savePaymentConfig()">保存配置</button>
+      </div>
     </div>
   </div>
 
@@ -582,6 +607,49 @@
       editingUserId = null;
     }
 
+    function openPaymentConfigModal() {
+      document.getElementById('paymentConfigModal').classList.add('show');
+      loadPaymentConfig();
+    }
+    function closePaymentConfigModal() {
+      document.getElementById('paymentConfigModal').classList.remove('show');
+    }
+    async function loadPaymentConfig() {
+      try {
+        const res = await fetch('/api/v1/admin/payment-config', { headers: { 'Authorization': 'Bearer ' + getToken() } });
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('alipayQrcodeUrl').value = data.alipay_qrcode_url || '';
+          document.getElementById('wechatQrcodeUrl').value = data.wechat_qrcode_url || '';
+          document.getElementById('contactInfo').value = data.contact_info || '';
+        }
+      } catch(e) { console.error('加载支付配置失败', e); }
+    }
+    async function savePaymentConfig() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = '保存中...';
+      try {
+        const res = await fetch('/api/v1/admin/payment-config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+          body: JSON.stringify({
+            alipay_qrcode_url: document.getElementById('alipayQrcodeUrl').value,
+            wechat_qrcode_url: document.getElementById('wechatQrcodeUrl').value,
+            contact_info: document.getElementById('contactInfo').value
+          })
+        });
+        if (res.ok) {
+          alert('✅ 支付配置保存成功！');
+          closePaymentConfigModal();
+        } else {
+          const err = await res.json();
+          alert('❌ 保存失败: ' + (err.error || '未知错误'));
+        }
+      } catch(e) { alert('❌ 网络错误: ' + e.message); }
+      finally { btn.disabled = false; btn.textContent = '保存配置'; }
+    }
+
     async function saveSubscription() {
       if (!editingUserId) return;
       const btn = document.getElementById('saveBtn');
@@ -651,5 +719,44 @@
       setTimeout(() => el.classList.remove('show'), 3000);
     }
   </script>
+
+  <!-- 支付配置弹窗 -->
+  <div id="paymentConfigModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:500px;">
+      <div class="modal-header">
+        <h3>支付配置</h3>
+        <span class="close" onclick="document.getElementById('paymentConfigModal').style.display='none'">&times;</span>
+      </div>
+      <div class="modal-body" style="padding:20px;">
+        <div class="form-group">
+          <label>支付宝收款二维码（图片链接）</label>
+          <input type="text" id="alipayQrcodeUrl" class="form-input" placeholder="输入支付宝收款码图片链接" />
+        </div>
+        <div class="form-group">
+          <label>微信收款二维码（图片链接）</label>
+          <input type="text" id="wechatQrcodeUrl" class="form-input" placeholder="输入微信收款码图片链接" />
+        </div>
+        <div class="form-group">
+          <label>联系信息（选填）</label>
+          <input type="text" id="contactInfo" class="form-input" placeholder="如：微信号、手机号" />
+        </div>
+        <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
+          <div id="qrcodePreview" style="display:flex;gap:20px;flex-wrap:wrap;">
+            <div id="alipayPreview" style="display:none;text-align:center;">
+              <p style="font-size:13px;color:#666;margin-bottom:8px;">支付宝收款码</p>
+              <img id="alipayPreviewImg" src="" style="width:150px;height:150px;border:1px solid #ddd;border-radius:8px;object-fit:cover;" />
+            </div>
+            <div id="wechatPreview" style="display:none;text-align:center;">
+              <p style="font-size:13px;color:#666;margin-bottom:8px;">微信收款码</p>
+              <img id="wechatPreviewImg" src="" style="width:150px;height:150px;border:1px solid #ddd;border-radius:8px;object-fit:cover;" />
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:20px;">
+          <button class="btn btn-primary" onclick="savePaymentConfig()">保存配置</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
