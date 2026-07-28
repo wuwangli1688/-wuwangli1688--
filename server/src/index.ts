@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import apiRouter from "./routes/index.js";
+import adminRouter, { adminLoginRouter } from "./routes/admin.js";
 import supabaseConfigRouter from "./routes/supabase-config.js";
 import wechatRouter from "./routes/wechat.js";
 import { getSupabaseClient } from "./storage/database/supabase-client.js";
@@ -132,8 +133,17 @@ app.use('/api/supabase-config', supabaseConfigRouter);
 // WeChat mini program routes (public, no auth required for login/bind)
 app.use('/api/v1/wechat', wechatRouter);
 
+// Admin login route (无需鉴权，必须放在apiRouter之前)
+app.use('/api/v1/admin', adminLoginRouter);
+
+// Admin routes (独立鉴权，不走Supabase，必须放在apiRouter之前)
+app.use('/api/v1/admin', adminRouter);
+
 // API routes
 app.use('/api/v1', apiRouter);
+
+// Serve admin static files
+app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
 
 app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}/`);

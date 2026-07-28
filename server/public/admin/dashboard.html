@@ -1,762 +1,457 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>即时记账 · 管理后台</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f1f5f9;
-      color: #0f172a;
-      min-height: 100vh;
-    }
-    /* ====== 顶部导航 ====== */
-    .header {
-      background: #0f172a;
-      color: #fff;
-      padding: 0 24px;
-      height: 60px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-    .header h1 {
-      font-size: 18px;
-      font-weight: 700;
-    }
-    .header h1 span { color: #818cf8; }
-    .header-right {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    .header-right .email {
-      font-size: 13px;
-      color: #94a3b8;
-    }
-    .btn-logout {
-      background: rgba(255,255,255,0.1);
-      border: none;
-      color: #fff;
-      padding: 6px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    .btn-logout:hover { background: rgba(255,255,255,0.2); }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>即时记账 · 开发者后台</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; }
+.header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+.header h1 { font-size: 18px; }
+.header .user-info { font-size: 13px; opacity: 0.8; }
+.header .logout-btn { background: none; border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; margin-left: 12px; }
+.tabs { display: flex; background: #fff; border-bottom: 1px solid #e0e0e0; padding: 0 24px; }
+.tab-btn { padding: 14px 24px; border: none; background: none; font-size: 14px; color: #666; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.tab-btn.active { color: #1a1a2e; border-bottom-color: #302b63; font-weight: 600; }
+.tab-btn:hover { color: #1a1a2e; }
+.content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
 
-    /* ====== 统计卡片 ====== */
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px;
-      padding: 20px 24px 0;
-    }
-    .stat-card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 16px 20px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    .stat-card .label {
-      font-size: 12px;
-      color: #64748b;
-      margin-bottom: 4px;
-    }
-    .stat-card .value {
-      font-size: 28px;
-      font-weight: 700;
-      color: #0f172a;
-    }
-    .stat-card .value.green { color: #059669; }
-    .stat-card .value.blue { color: #4f46e5; }
-    .stat-card .value.orange { color: #ea580c; }
-    .stat-card .value.purple { color: #7c3aed; }
+/* Stats Cards */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.stat-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.stat-card .label { font-size: 13px; color: #888; margin-bottom: 6px; }
+.stat-card .value { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+.stat-card .sub { font-size: 12px; color: #aaa; margin-top: 4px; }
 
-    /* ====== 主内容区 ====== */
-    .main-content {
-      padding: 20px 24px 40px;
-    }
+/* Table */
+.table-container { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+table { width: 100%; border-collapse: collapse; }
+th { background: #f8f9fa; padding: 12px 16px; text-align: left; font-size: 13px; color: #666; font-weight: 600; border-bottom: 1px solid #e0e0e0; }
+td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+tr:hover td { background: #f8f9ff; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+.badge-pro { background: #e8f5e9; color: #2e7d32; }
+.badge-free { background: #f5f5f5; color: #666; }
+.badge-paid { background: #e3f2fd; color: #1565c0; }
+.badge-pending { background: #fff3e0; color: #e65100; }
+.btn { padding: 6px 14px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; transition: opacity 0.2s; }
+.btn:hover { opacity: 0.85; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-primary { background: #302b63; color: #fff; }
+.btn-success { background: #2e7d32; color: #fff; }
+.btn-danger { background: #c62828; color: #fff; }
+.btn-outline { background: none; border: 1px solid #ddd; color: #666; }
 
-    /* ====== 筛选栏 ====== */
-    .toolbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
-    .toolbar input {
-      flex: 1;
-      min-width: 200px;
-      padding: 10px 14px;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      font-size: 14px;
-      outline: none;
-    }
-    .toolbar input:focus { border-color: #4f46e5; }
-    .toolbar select {
-      padding: 10px 14px;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      font-size: 14px;
-      outline: none;
-      background: #fff;
-      cursor: pointer;
-    }
-    .toolbar .btn-refresh {
-      padding: 10px 20px;
-      background: #4f46e5;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    .toolbar .btn-refresh:hover { background: #4338ca; }
+/* Form */
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 14px; color: #555; margin-bottom: 6px; font-weight: 500; }
+.form-group input, .form-group textarea { width: 100%; padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; }
+.form-group input:focus, .form-group textarea:focus { border-color: #302b63; }
+.form-group textarea { min-height: 80px; resize: vertical; }
 
-    /* ====== 表格 ====== */
-    .table-wrap {
-      background: #fff;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    thead {
-      background: #f8fafc;
-      border-bottom: 1px solid #e2e8f0;
-    }
-    thead th {
-      padding: 12px 16px;
-      text-align: left;
-      font-size: 12px;
-      font-weight: 600;
-      color: #64748b;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      white-space: nowrap;
-    }
-    tbody tr {
-      border-bottom: 1px solid #f1f5f9;
-      transition: background 0.15s;
-    }
-    tbody tr:hover { background: #f8fafc; }
-    tbody td {
-      padding: 14px 16px;
-      font-size: 14px;
-      vertical-align: middle;
-    }
-    .user-name {
-      font-weight: 600;
-      color: #0f172a;
-    }
-    .user-email {
-      font-size: 12px;
-      color: #94a3b8;
-    }
-    .badge {
-      display: inline-block;
-      padding: 2px 10px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    .badge-parent { background: #eef2ff; color: #4f46e5; }
-    .badge-child { background: #fef3c7; color: #d97706; }
-    .badge-free { background: #f1f5f9; color: #64748b; }
-    .badge-pro { background: #d1fae5; color: #059669; }
-    .badge-active { background: #d1fae5; color: #059669; }
-    .badge-expired { background: #fee2e2; color: #ef4444; }
-    .badge-pending { background: #fef3c7; color: #d97706; }
+/* Search */
+.search-bar { margin-bottom: 16px; display: flex; gap: 12px; align-items: center; }
+.search-bar input { flex: 1; padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; max-width: 300px; }
+.search-bar input:focus { border-color: #302b63; }
+.search-bar select { padding: 10px 14px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; outline: none; }
 
-    .action-btn {
-      padding: 6px 14px;
-      border: none;
-      border-radius: 6px;
-      font-size: 13px;
-      cursor: pointer;
-      font-weight: 500;
-      transition: all 0.15s;
-    }
-    .action-btn.edit { background: #eef2ff; color: #4f46e5; }
-    .action-btn.edit:hover { background: #e0e7ff; }
+/* Modal */
+.modal-overlay { display: none; position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+.modal-overlay.active { display: flex; }
+.modal { background: #fff; border-radius: 16px; padding: 24px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; }
+.modal h2 { font-size: 18px; margin-bottom: 20px; }
+.modal .actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+.modal .actions .btn { padding: 10px 24px; }
 
-    /* ====== Modal ====== */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.5);
-      z-index: 200;
-      align-items: center;
-      justify-content: center;
-    }
-    .modal-overlay.show { display: flex; }
-    .modal {
-      background: #fff;
-      border-radius: 16px;
-      padding: 32px;
-      width: 480px;
-      max-width: 90vw;
-      max-height: 80vh;
-      overflow-y: auto;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    }
-    .modal h2 {
-      font-size: 20px;
-      margin-bottom: 4px;
-    }
-    .modal .modal-sub {
-      font-size: 14px;
-      color: #64748b;
-      margin-bottom: 24px;
-    }
-    .modal .form-group {
-      margin-bottom: 16px;
-    }
-    .modal .form-group label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: #334155;
-      margin-bottom: 6px;
-    }
-    .modal .form-group select,
-    .modal .form-group input {
-      width: 100%;
-      padding: 10px 14px;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      font-size: 14px;
-      outline: none;
-    }
-    .modal .form-group select:focus,
-    .modal .form-group input:focus { border-color: #4f46e5; }
-    .modal .btn-row {
-      display: flex;
-      gap: 12px;
-      margin-top: 24px;
-    }
-    .modal .btn-row button {
-      flex: 1;
-      padding: 10px;
-      border: none;
-      border-radius: 8px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-    }
-    .modal .btn-cancel { background: #f1f5f9; color: #475569; }
-    .modal .btn-cancel:hover { background: #e2e8f0; }
-    .modal .btn-save { background: #4f46e5; color: #fff; }
-    .modal .btn-save:hover { background: #4338ca; }
-    .modal .btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+/* Section title */
+.section-title { font-size: 16px; font-weight: 600; color: #1a1a2e; margin-bottom: 16px; }
 
-    /* ====== 分页 ====== */
-    .pagination {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 16px;
-    }
-    .pagination button {
-      padding: 6px 14px;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      background: #fff;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    .pagination button:hover { background: #f8fafc; }
-    .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .pagination .page-info {
-      font-size: 13px;
-      color: #64748b;
-    }
+/* Pagination */
+.pagination { display: flex; justify-content: center; gap: 8px; padding: 16px; }
+.pagination button { padding: 6px 14px; border: 1px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.pagination button.active { background: #302b63; color: #fff; border-color: #302b63; }
+.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    /* ====== 状态提示 ====== */
-    .toast {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 12px 24px;
-      border-radius: 10px;
-      color: #fff;
-      font-size: 14px;
-      font-weight: 500;
-      z-index: 300;
-      transform: translateX(120%);
-      transition: transform 0.3s ease;
-    }
-    .toast.show { transform: translateX(0); }
-    .toast.success { background: #059669; }
-    .toast.error { background: #ef4444; }
-
-    .loading-row td {
-      text-align: center;
-      padding: 40px;
-      color: #94a3b8;
-      font-size: 14px;
-    }
-
-    @media (max-width: 768px) {
-      .stats-row { grid-template-columns: repeat(2, 1fr); }
-      .header h1 { font-size: 15px; }
-      .toolbar { flex-direction: column; }
-      .toolbar input { width: 100%; }
-    }
-  </style>
+/* Payment config */
+.config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.config-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.config-card h3 { font-size: 15px; margin-bottom: 16px; color: #1a1a2e; }
+.preview-img { max-width: 200px; max-height: 200px; margin-top: 8px; border-radius: 8px; border: 1px solid #eee; }
+.success-msg { background: #e8f5e9; color: #2e7d32; padding: 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
+</style>
 </head>
 <body>
-  <div class="toast" id="toast"></div>
-
-  <!-- 顶部导航 -->
-  <header class="header">
-    <h1>📊 即时记账 · <span>管理后台</span></h1>
-    <div class="header-right">
-      <span class="email" id="userEmail"></span>
-      <button class="btn-logout" onclick="handleLogout()">退出登录</button>
-    </div>
-  </header>
-
-  <!-- 统计卡片 -->
-  <div class="stats-row" id="statsRow">
-    <div class="stat-card"><div class="label">主账号总数</div><div class="value blue" id="statParents">-</div></div>
-    <div class="stat-card"><div class="label">子账号总数</div><div class="value orange" id="statChildren">-</div></div>
-    <div class="stat-card"><div class="label">专业版订阅</div><div class="value green" id="statPro">-</div></div>
-    <div class="stat-card"><div class="label">免费版用户</div><div class="value purple" id="statFree">-</div></div>
-    <div class="stat-card"><div class="label">本月收入</div><div class="value green" id="statRevenue">¥0</div></div>
-    <div class="stat-card"><div class="label">今日活跃</div><div class="value blue" id="statActive">-</div></div>
+<div class="header">
+  <h1>📊 即时记账 · 开发者后台</h1>
+  <div>
+    <span class="user-info" id="userInfo"></span>
+    <button class="logout-btn" onclick="handleLogout()">退出登录</button>
   </div>
+</div>
+<div class="tabs" id="tabNav">
+  <button class="tab-btn active" onclick="switchTab('dashboard')">📊 总览</button>
+  <button class="tab-btn" onclick="switchTab('users')">👥 用户管理</button>
+  <button class="tab-btn" onclick="switchTab('orders')">📦 订单管理</button>
+  <button class="tab-btn" onclick="switchTab('feedbacks')">💬 反馈</button>
+  <button class="tab-btn" onclick="switchTab('payment')">💳 支付配置</button>
+</div>
+<div class="content">
 
-  <!-- 主内容 -->
-  <div class="main-content">
-    <!-- 筛选栏 -->
-    <div class="toolbar">
-      <input type="text" id="searchInput" placeholder="🔍 搜索用户（名称、ID）..." oninput="debounceSearch()">
-      <select id="roleFilter" onchange="loadUsers()">
-        <option value="">全部用户</option>
-        <option value="parent">仅主账号</option>
-        <option value="child">仅子账号</option>
-      </select>
-      <select id="planFilter" onchange="loadUsers()">
-        <option value="">全部套餐</option>
+<!-- 总览 -->
+<div class="tab-content active" id="tab-dashboard">
+  <div class="stats-grid" id="statsGrid"></div>
+  <div class="section-title">📈 近期用户活跃</div>
+  <div class="table-container">
+    <table>
+      <thead><tr><th>主账号</th><th>邮箱</th><th>子账号数</th><th>门店数</th><th>本周交易</th><th>订阅</th><th>最后活跃</th></tr></thead>
+      <tbody id="userStatsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 用户管理 -->
+<div class="tab-content" id="tab-users">
+  <div class="search-bar">
+    <input type="text" id="userSearch" placeholder="搜索用户名/邮箱..." oninput="loadUsers()">
+    <select id="subFilter" onchange="loadUsers()">
+      <option value="">全部</option>
+      <option value="free">免费版</option>
+      <option value="pro">专业版</option>
+    </select>
+  </div>
+  <div class="table-container">
+    <table>
+      <thead><tr><th>用户名</th><th>邮箱</th><th>角色</th><th>子账号数</th><th>门店数</th><th>订阅</th><th>操作</th></tr></thead>
+      <tbody id="usersBody"></tbody>
+    </table>
+    <div class="pagination" id="usersPagination"></div>
+  </div>
+</div>
+
+<!-- 订单管理 -->
+<div class="tab-content" id="tab-orders">
+  <div class="search-bar">
+    <select id="orderFilter" onchange="loadOrders()">
+      <option value="">全部</option>
+      <option value="pending">待付款</option>
+      <option value="paid">已付款</option>
+    </select>
+  </div>
+  <div class="table-container">
+    <table>
+      <thead><tr><th>订单号</th><th>用户</th><th>套餐</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody id="ordersBody"></tbody>
+    </table>
+    <div class="pagination" id="ordersPagination"></div>
+  </div>
+</div>
+
+<!-- 反馈 -->
+<div class="tab-content" id="tab-feedbacks">
+  <div class="table-container">
+    <table>
+      <thead><tr><th>用户</th><th>内容</th><th>联系方式</th><th>时间</th></tr></thead>
+      <tbody id="feedbacksBody"></tbody>
+    </table>
+    <div class="pagination" id="feedbacksPagination"></div>
+  </div>
+</div>
+
+<!-- 支付配置 -->
+<div class="tab-content" id="tab-payment">
+  <div class="success-msg" id="paySuccessMsg">✅ 保存成功</div>
+  <div class="config-grid">
+    <div class="config-card">
+      <h3>支付宝收款码</h3>
+      <div class="form-group">
+        <label>图片链接</label>
+        <input type="text" id="alipayUrl" placeholder="https://...">
+      </div>
+      <img id="alipayPreview" class="preview-img" style="display:none" alt="支付宝收款码预览">
+    </div>
+    <div class="config-card">
+      <h3>微信收款码</h3>
+      <div class="form-group">
+        <label>图片链接</label>
+        <input type="text" id="wechatUrl" placeholder="https://...">
+      </div>
+      <img id="wechatPreview" class="preview-img" style="display:none" alt="微信收款码预览">
+    </div>
+  </div>
+  <div style="margin-top:16px;">
+    <div class="form-group">
+      <label>联系信息（显示给用户）</label>
+      <input type="text" id="contactInfo" placeholder="如：付款后请截图联系微信 xxx">
+    </div>
+    <button class="btn btn-primary" onclick="savePaymentConfig()" style="padding:12px 32px;font-size:15px;">💾 保存配置</button>
+  </div>
+</div>
+
+</div>
+
+<!-- 编辑订阅 Modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h2>编辑订阅</h2>
+    <div class="form-group"><label>用户</label><input type="text" id="editUserEmail" disabled></div>
+    <div class="form-group"><label>订阅方案</label>
+      <select id="editPlan">
         <option value="free">免费版</option>
-        <option value="pro">专业版</option>
+        <option value="pro">专业版 ¥15/月</option>
       </select>
-      <button class="btn-refresh" onclick="loadDashboard(); loadUsers();">🔄 刷新</button>
-      <button class="btn-refresh" onclick="openPaymentConfig()" style="background:#7c3aed;color:#fff;border:none;">💳 支付配置</button>
     </div>
-
-    <!-- 用户表格 -->
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>用户信息</th>
-            <th>类型</th>
-            <th>子账号</th>
-            <th>门店数</th>
-            <th>交易总数</th>
-            <th>本周交易</th>
-            <th>最后活跃</th>
-            <th>套餐</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="userTableBody">
-          <tr class="loading-row"><td colspan="9">加载中...</td></tr>
-        </tbody>
-      </table>
-      <div class="pagination" id="pagination"></div>
+    <div class="actions">
+      <button class="btn btn-outline" onclick="closeEditModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveUserSubscription()">保存</button>
     </div>
   </div>
+</div>
 
-  <!-- 支付配置 Modal -->
-  <div class="modal-overlay" id="paymentConfigModal">
-    <div class="modal">
-      <h2>💳 支付配置</h2>
-      <p class="modal-sub">设置收款二维码，用户付款时展示</p>
-      <div class="form-group">
-        <label>支付宝收款码（图片链接）</label>
-        <input type="text" id="alipayQrcodeUrl" placeholder="https://...">
-      </div>
-      <div class="form-group">
-        <label>微信收款码（图片链接）</label>
-        <input type="text" id="wechatQrcodeUrl" placeholder="https://...">
-      </div>
-      <div class="form-group">
-        <label>联系信息</label>
-        <input type="text" id="contactInfo" placeholder="微信号或手机号">
-      </div>
-      <div class="btn-row">
-        <button class="btn-cancel" onclick="closePaymentConfigModal()">取消</button>
-        <button class="btn-save" onclick="savePaymentConfig()">保存配置</button>
-      </div>
-    </div>
-  </div>
+<script>
+const API = '/api/v1/admin';
+let currentPage = { users: 1, orders: 1, feedbacks: 1 };
 
-  <!-- 编辑订阅 Modal -->
-  <div class="modal-overlay" id="editModal">
-    <div class="modal">
-      <h2 id="modalTitle">编辑订阅</h2>
-      <p class="modal-sub" id="modalSub">管理用户套餐</p>
-      <div class="form-group">
-        <label>套餐类型</label>
-        <select id="editPlanType">
-          <option value="free">免费版</option>
-          <option value="pro">专业版</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>订阅状态</label>
-        <select id="editStatus">
-          <option value="active">激活</option>
-          <option value="expired">过期</option>
-          <option value="canceled">取消</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>门店限制</label>
-        <input type="number" id="editStoreLimit" value="1" min="0">
-      </div>
-      <div class="form-group">
-        <label>子账号限制</label>
-        <input type="number" id="editSubLimit" value="0" min="0">
-      </div>
-      <div class="btn-row">
-        <button class="btn-cancel" onclick="closeEditModal()">取消</button>
-        <button class="btn-save" id="saveBtn" onclick="saveSubscription()">保存</button>
-      </div>
-    </div>
-  </div>
+function getToken() { return localStorage.getItem('admin_token'); }
 
-  <script>
-    const API_BASE = '/api/v1';
-    let currentUser = null;
-    let currentPage = 1;
-    let searchTimer = null;
+async function apiFetch(url, options = {}) {
+  const token = getToken();
+  if (!token) { window.location.href = 'login.html'; return; }
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...options.headers, 'X-Admin-Token': token, 'Content-Type': 'application/json' }
+  });
+  if (res.status === 401) { localStorage.removeItem('admin_token'); window.location.href = 'login.html'; return; }
+  return res;
+}
 
-    // ====== 初始化 ======
-    document.addEventListener('DOMContentLoaded', () => {
-      const token = localStorage.getItem('admin_token');
-      const user = localStorage.getItem('admin_user');
-      if (!token || !user) {
-        window.location.href = '/admin/login.html';
-        return;
-      }
-      currentUser = JSON.parse(user);
-      document.getElementById('userEmail').textContent = currentUser.email || '管理员';
-      loadDashboard();
-      loadUsers();
-    });
+async function apiFetchRaw(url, options = {}) {
+  const token = getToken();
+  if (!token) { window.location.href = 'login.html'; return; }
+  const res = await fetch(url, { ...options, headers: { ...options.headers, 'X-Admin-Token': token } });
+  if (res.status === 401) { localStorage.removeItem('admin_token'); window.location.href = 'login.html'; }
+  return res;
+}
 
-    // ====== HTTP 请求 ======
-    async function apiFetch(path, options = {}) {
-      const token = localStorage.getItem('admin_token');
-      const resp = await fetch(`${API_BASE}/admin${path}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          ...options.headers,
-        },
-      });
-      if (resp.status === 401) {
-        localStorage.removeItem('admin_token');
-        localStorage.removeItem('admin_refresh_token');
-        localStorage.removeItem('admin_user');
-        window.location.href = '/admin/login.html';
-        return null;
-      }
-      return resp.json();
+// Tab switching
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector(`.tab-btn[onclick*="${name}"]`).classList.add('active');
+  if (name === 'dashboard') loadDashboard();
+  if (name === 'users') loadUsers();
+  if (name === 'orders') loadOrders();
+  if (name === 'feedbacks') loadFeedbacks();
+  if (name === 'payment') loadPaymentConfig();
+}
+
+// Dashboard
+async function loadDashboard() {
+  const res = await apiFetch(API + '/dashboard');
+  if (!res) return;
+  const data = await res.json();
+  document.getElementById('statsGrid').innerHTML = `
+    <div class="stat-card"><div class="label">总主账号</div><div class="value">${data.totalMainAccounts || 0}</div></div>
+    <div class="stat-card"><div class="label">总子账号</div><div class="value">${data.totalSubAccounts || 0}</div></div>
+    <div class="stat-card"><div class="label">专业版用户</div><div class="value">${data.proUsers || 0}</div><div class="sub">免费 ${data.freeUsers || 0}</div></div>
+    <div class="stat-card"><div class="label">总收入</div><div class="value">¥${data.totalRevenue || 0}</div><div class="sub">本月 ¥${data.monthlyRevenue || 0}</div></div>
+    <div class="stat-card"><div class="label">今日活跃</div><div class="value">${data.todayActive || 0}</div><div class="sub">本周 ${data.weekActive || 0}</div></div>
+    <div class="stat-card"><div class="label">总订单</div><div class="value">${data.totalOrders || 0}</div><div class="sub">待处理 ${data.pendingOrders || 0}</div></div>
+  `;
+  if (data.users) {
+    document.getElementById('userStatsBody').innerHTML = data.users.map(u => `
+      <tr>
+        <td><strong>${u.username || '未设置'}</strong></td>
+        <td>${u.email}</td>
+        <td>${u.subAccountCount || 0}</td>
+        <td>${u.storeCount || 0}</td>
+        <td>${u.weekTransactions || 0}</td>
+        <td><span class="badge ${u.plan === 'pro' ? 'badge-pro' : 'badge-free'}">${u.plan === 'pro' ? '专业版' : '免费版'}</span></td>
+        <td>${u.lastActive || '-'}</td>
+      </tr>
+    `).join('');
+  }
+}
+
+// Users
+async function loadUsers() {
+  const search = document.getElementById('userSearch').value;
+  const filter = document.getElementById('subFilter').value;
+  const page = currentPage.users;
+  const res = await apiFetch(API + '/users?page=' + page + '&limit=20&search=' + encodeURIComponent(search) + '&plan=' + filter);
+  if (!res) return;
+  const data = await res.json();
+  document.getElementById('usersBody').innerHTML = (data.users || []).map(u => `
+    <tr>
+      <td><strong>${u.username || '未设置'}</strong></td>
+      <td>${u.email}</td>
+      <td>${u.role === 'parent' ? '👑 主账号' : '👤 子账号'}</td>
+      <td>${u.subAccountCount || 0}</td>
+      <td>${u.storeCount || 0}</td>
+      <td><span class="badge ${u.plan === 'pro' ? 'badge-pro' : 'badge-free'}">${u.plan === 'pro' ? '专业版' : '免费版'}</span></td>
+      <td><button class="btn btn-sm btn-primary" onclick="openEditModal('${u.id}','${u.email}','${u.plan}')">编辑</button></td>
+    </tr>
+  `).join('');
+  renderPagination('usersPagination', data.total, page, (p) => { currentPage.users = p; loadUsers(); });
+}
+
+// Orders
+async function loadOrders() {
+  const filter = document.getElementById('orderFilter').value;
+  const page = currentPage.orders;
+  const res = await apiFetch(API + '/orders?page=' + page + '&limit=20&status=' + filter);
+  if (!res) return;
+  const data = await res.json();
+  document.getElementById('ordersBody').innerHTML = (data.orders || []).map(o => `
+    <tr>
+      <td style="font-size:12px;color:#888;">${o.order_id || o.id?.substring(0,8)}</td>
+      <td>${o.user_email || o.user_id?.substring(0,8)}</td>
+      <td>${o.plan_type === 'pro' ? '专业版' : o.plan_type} ${o.period === 'year' ? '(年付)' : '(月付)'}</td>
+      <td><strong>¥${o.amount}</strong></td>
+      <td><span class="badge ${o.status === 'paid' ? 'badge-paid' : 'badge-pending'}">${o.status === 'paid' ? '已付款' : '待付款'}</span></td>
+      <td style="font-size:12px;color:#888;">${o.created_at ? new Date(o.created_at).toLocaleString() : '-'}</td>
+      <td>${o.status === 'pending' ? `<button class="btn btn-sm btn-success" onclick="confirmOrder('${o.id}')">确认收款</button>` : '-'}</td>
+    </tr>
+  `).join('');
+  renderPagination('ordersPagination', data.total, page, (p) => { currentPage.orders = p; loadOrders(); });
+}
+
+// Feedbacks
+async function loadFeedbacks() {
+  const page = currentPage.feedbacks;
+  const res = await apiFetch(API + '/feedbacks?page=' + page + '&limit=20');
+  if (!res) return;
+  const data = await res.json();
+  document.getElementById('feedbacksBody').innerHTML = (data.feedbacks || []).map(f => `
+    <tr>
+      <td>${f.email || f.user_id?.substring(0,8)}</td>
+      <td style="max-width:300px;">${f.content}</td>
+      <td>${f.contact || '-'}</td>
+      <td style="font-size:12px;color:#888;">${f.created_at ? new Date(f.created_at).toLocaleString() : '-'}</td>
+    </tr>
+  `).join('');
+  renderPagination('feedbacksPagination', data.total, page, (p) => { currentPage.feedbacks = p; loadFeedbacks(); });
+}
+
+// Payment Config
+async function loadPaymentConfig() {
+  const res = await apiFetch(API + '/payment-config');
+  if (!res) return;
+  const data = await res.json();
+  if (data) {
+    document.getElementById('alipayUrl').value = data.alipay_qrcode_url || '';
+    document.getElementById('wechatUrl').value = data.wechat_qrcode_url || '';
+    document.getElementById('contactInfo').value = data.contact_info || '';
+    if (data.alipay_qrcode_url) {
+      document.getElementById('alipayPreview').src = data.alipay_qrcode_url;
+      document.getElementById('alipayPreview').style.display = 'block';
     }
-
-    // ====== 仪表盘 ======
-    async function loadDashboard() {
-      try {
-        const data = await apiFetch('/dashboard');
-        if (!data) return;
-        document.getElementById('statParents').textContent = data.parentUsers || 0;
-        document.getElementById('statChildren').textContent = data.childUsers || 0;
-        document.getElementById('statPro').textContent = data.proSubscriptions || 0;
-        document.getElementById('statFree').textContent = (data.parentUsers || 0) - (data.proSubscriptions || 0);
-        document.getElementById('statRevenue').textContent = `¥${data.monthRevenue || 0}`;
-        document.getElementById('statActive').textContent = data.activeToday || 0;
-      } catch (e) {
-        console.error('Dashboard error:', e);
-      }
+    if (data.wechat_qrcode_url) {
+      document.getElementById('wechatPreview').src = data.wechat_qrcode_url;
+      document.getElementById('wechatPreview').style.display = 'block';
     }
+  }
+}
 
-    // ====== 用户列表 ======
-    async function loadUsers(page = currentPage) {
-      currentPage = page;
-      const search = document.getElementById('searchInput').value.trim();
-      const role = document.getElementById('roleFilter').value;
-      const plan = document.getElementById('planFilter').value;
-      const tbody = document.getElementById('userTableBody');
-      tbody.innerHTML = '<tr class="loading-row"><td colspan="9">加载中...</td></tr>';
+async function savePaymentConfig() {
+  const alipay = document.getElementById('alipayUrl').value.trim();
+  const wechat = document.getElementById('wechatUrl').value.trim();
+  const contact = document.getElementById('contactInfo').value.trim();
+  const res = await apiFetch(API + '/payment-config', {
+    method: 'PUT',
+    body: JSON.stringify({ alipay_qrcode_url: alipay, wechat_qrcode_url: wechat, contact_info: contact })
+  });
+  if (res && res.ok) {
+    const msg = document.getElementById('paySuccessMsg');
+    msg.style.display = 'block';
+    setTimeout(() => msg.style.display = 'none', 3000);
+    loadPaymentConfig();
+  }
+}
 
-      try {
-        let url = `/users?page=${page}&limit=20`;
-        if (search) url += `&search=${encodeURIComponent(search)}`;
-        const data = await apiFetch(url);
-        if (!data) return;
+// Edit Subscription Modal
+function openEditModal(id, email, plan) {
+  document.getElementById('editModal').classList.add('active');
+  document.getElementById('editUserEmail').value = email;
+  document.getElementById('editPlan').value = plan;
+  document.getElementById('editModal').dataset.userId = id;
+}
 
-        let users = data.users || [];
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('active');
+}
 
-        // 客户端过滤
-        if (role) users = users.filter(u => u.role === role);
-        if (plan) users = users.filter(u => (u.subscription?.planType || 'free') === plan);
+async function saveUserSubscription() {
+  const id = document.getElementById('editModal').dataset.userId;
+  const plan = document.getElementById('editPlan').value;
+  const res = await apiFetch(API + '/users/' + id + '/subscription', {
+    method: 'PUT',
+    body: JSON.stringify({ plan_type: plan })
+  });
+  if (res && res.ok) {
+    closeEditModal();
+    loadUsers();
+    loadDashboard();
+  }
+}
 
-        if (users.length === 0) {
-          tbody.innerHTML = '<tr class="loading-row"><td colspan="9">暂无数据</td></tr>';
-          document.getElementById('pagination').innerHTML = '';
-          return;
-        }
+// Confirm Order
+async function confirmOrder(id) {
+  if (!confirm('确认已收到该笔付款？')) return;
+  const res = await apiFetch(API + '/orders/' + id + '/confirm', { method: 'POST' });
+  if (res && res.ok) {
+    loadOrders();
+    loadDashboard();
+  }
+}
 
-        tbody.innerHTML = users.map(u => {
-          const planType = u.subscription?.planType || 'free';
-          const subStatus = u.subscription?.status || 'active';
-          const lastActive = u.stats?.lastActive ? formatTime(u.stats.lastActive) : '从未使用';
-          return `<tr>
-            <td>
-              <div class="user-name">${escHtml(u.displayName || '未命名')}</div>
-              <div class="user-email">${escHtml(u.platform || '')}</div>
-            </td>
-            <td><span class="badge ${u.role === 'parent' ? 'badge-parent' : 'badge-child'}">${u.role === 'parent' ? '主账号' : '子账号'}</span></td>
-            <td>${u.stats?.childCount || 0}</td>
-            <td>${u.stats?.storeCount || 0}</td>
-            <td>${u.stats?.totalTransactions || 0}</td>
-            <td>${u.stats?.weekTransactions || 0}</td>
-            <td style="font-size:12px;color:#64748b;">${lastActive}</td>
-            <td>
-              <span class="badge ${planType === 'pro' ? 'badge-pro' : 'badge-free'}">${planType === 'pro' ? '专业版' : '免费版'}</span>
-              ${subStatus !== 'active' ? `<br><span class="badge badge-expired" style="margin-top:4px;">${subStatus}</span>` : ''}
-            </td>
-            <td>
-              ${u.role === 'parent' ? `<button class="action-btn edit" onclick="openEditModal('${u.id}')">管理</button>` : '-'}
-            </td>
-          </tr>`;
-        }).join('');
-
-        // 分页
-        renderPagination(data.total || 0, data.page, data.limit);
-
-      } catch (e) {
-        tbody.innerHTML = `<tr class="loading-row"><td colspan="9">加载失败: ${e.message}</td></tr>`;
-      }
+// Pagination
+function renderPagination(containerId, total, current, callback) {
+  const el = document.getElementById(containerId);
+  const pages = Math.ceil(total / 20);
+  if (pages <= 1) { el.innerHTML = ''; return; }
+  let html = `<button ${current <= 1 ? 'disabled' : ''} onclick="callback(${current-1})">‹</button>`;
+  for (let i = Math.max(1, current-2); i <= Math.min(pages, current+2); i++) {
+    html += `<button class="${i === current ? 'active' : ''}" onclick="callback(${i})">${i}</button>`;
+  }
+  html += `<button ${current >= pages ? 'disabled' : ''} onclick="callback(${current+1})">›</button>`;
+  el.innerHTML = html;
+  // Re-bind events
+  el.querySelectorAll('button:not([disabled])').forEach(btn => {
+    const match = btn.getAttribute('onclick')?.match(/callback\((\d+)\)/);
+    if (match) {
+      btn.onclick = () => callback(parseInt(match[1]));
     }
+  });
+}
 
-    function renderPagination(total, page, limit) {
-      const totalPages = Math.ceil(total / limit);
-      if (totalPages <= 1) {
-        document.getElementById('pagination').innerHTML = '';
-        return;
-      }
-      const el = document.getElementById('pagination');
-      el.innerHTML = `
-        <button onclick="loadUsers(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
-        <span class="page-info">第 ${page} / ${totalPages} 页（共 ${total} 条）</span>
-        <button onclick="loadUsers(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
-      `;
-    }
+// Logout
+function handleLogout() {
+  localStorage.removeItem('admin_token');
+  localStorage.removeItem('admin_username');
+  window.location.href = 'login.html';
+}
 
-    function debounceSearch() {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => loadUsers(1), 300);
-    }
+// Init
+document.addEventListener('DOMContentLoaded', () => {
+  const token = getToken();
+  if (!token) { window.location.href = 'login.html'; return; }
+  document.getElementById('userInfo').textContent = '开发者：' + (localStorage.getItem('admin_username') || '');
+  loadDashboard();
+});
 
-    // ====== 编辑订阅 ======
-    let editingUserId = null;
-
-    function openEditModal(userId) {
-      editingUserId = userId;
-      document.getElementById('modalTitle').textContent = '编辑订阅';
-      document.getElementById('modalSub').textContent = '正在加载用户信息...';
-      document.getElementById('editModal').classList.add('show');
-
-      // 获取用户信息
-      apiFetch(`/users?search=${userId}&limit=1`).then(data => {
-        const user = data?.users?.[0];
-        if (user) {
-          const sub = user.subscription || {};
-          document.getElementById('modalSub').textContent = `用户：${escHtml(user.displayName || '未命名')}（${user.role === 'parent' ? '主账号' : '子账号'}）`;
-          document.getElementById('editPlanType').value = sub.planType || 'free';
-          document.getElementById('editStatus').value = sub.status || 'active';
-          document.getElementById('editStoreLimit').value = sub.storeLimit ?? 1;
-          document.getElementById('editSubLimit').value = sub.subAccountLimit ?? 0;
-        }
-      });
-    }
-
-    function closeEditModal() {
-      document.getElementById('editModal').classList.remove('show');
-      editingUserId = null;
-    }
-
-    function openPaymentConfigModal() {
-      document.getElementById('paymentConfigModal').classList.add('show');
-      loadPaymentConfig();
-    }
-    function closePaymentConfigModal() {
-      document.getElementById('paymentConfigModal').classList.remove('show');
-    }
-    async function loadPaymentConfig() {
-      try {
-        const res = await fetch('/api/v1/admin/payment-config', { headers: { 'Authorization': 'Bearer ' + getToken() } });
-        if (res.ok) {
-          const data = await res.json();
-          document.getElementById('alipayQrcodeUrl').value = data.alipay_qrcode_url || '';
-          document.getElementById('wechatQrcodeUrl').value = data.wechat_qrcode_url || '';
-          document.getElementById('contactInfo').value = data.contact_info || '';
-        }
-      } catch(e) { console.error('加载支付配置失败', e); }
-    }
-    async function savePaymentConfig() {
-      const btn = event.target;
-      btn.disabled = true;
-      btn.textContent = '保存中...';
-      try {
-        const res = await fetch('/api/v1/admin/payment-config', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
-          body: JSON.stringify({
-            alipay_qrcode_url: document.getElementById('alipayQrcodeUrl').value,
-            wechat_qrcode_url: document.getElementById('wechatQrcodeUrl').value,
-            contact_info: document.getElementById('contactInfo').value
-          })
-        });
-        if (res.ok) {
-          alert('✅ 支付配置保存成功！');
-          closePaymentConfigModal();
-        } else {
-          const err = await res.json();
-          alert('❌ 保存失败: ' + (err.error || '未知错误'));
-        }
-      } catch(e) { alert('❌ 网络错误: ' + e.message); }
-      finally { btn.disabled = false; btn.textContent = '保存配置'; }
-    }
-
-    async function saveSubscription() {
-      if (!editingUserId) return;
-      const btn = document.getElementById('saveBtn');
-      btn.disabled = true;
-      btn.textContent = '保存中...';
-
-      try {
-        const data = await apiFetch(`/users/${editingUserId}/subscription`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            planType: document.getElementById('editPlanType').value,
-            status: document.getElementById('editStatus').value,
-            storeLimit: parseInt(document.getElementById('editStoreLimit').value) || 1,
-            subAccountLimit: parseInt(document.getElementById('editSubLimit').value) || 0,
-          }),
-        });
-        if (data && data.success) {
-          showToast('订阅已更新 ✅', 'success');
-          closeEditModal();
-          loadDashboard();
-          loadUsers();
-        } else {
-          showToast(data?.error || '保存失败', 'error');
-        }
-      } catch (e) {
-        showToast('保存失败: ' + e.message, 'error');
-      }
-      btn.disabled = false;
-      btn.textContent = '保存';
-    }
-
-    // ====== 退出 ======
-    function handleLogout() {
-      localStorage.removeItem('admin_token');
-      localStorage.removeItem('admin_refresh_token');
-      localStorage.removeItem('admin_user');
-      window.location.href = '/admin/login.html';
-    }
-
-    // ====== 工具函数 ======
-    function formatTime(iso) {
-      if (!iso) return '-';
-      const d = new Date(iso);
-      const now = new Date();
-      const diff = now - d;
-      if (diff < 60000) return '刚刚';
-      if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-      if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-      return `${d.getMonth() + 1}月${d.getDate()}日`;
-    }
-
-    function escHtml(str) {
-      if (!str) return '-';
-      return String(str).replace(/[&<>"]/g, function(m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        if (m === '"') return '&quot;';
-        return m;
-      });
-    }
-
-    function showToast(msg, type = 'success') {
-      const el = document.getElementById('toast');
-      el.textContent = msg;
-      el.className = `toast ${type} show`;
-      setTimeout(() => el.classList.remove('show'), 3000);
-    }
-  </script>
-
-  <!-- 支付配置弹窗 -->
-  <div id="paymentConfigModal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:500px;">
-      <div class="modal-header">
-        <h3>支付配置</h3>
-        <span class="close" onclick="document.getElementById('paymentConfigModal').style.display='none'">&times;</span>
-      </div>
-      <div class="modal-body" style="padding:20px;">
-        <div class="form-group">
-          <label>支付宝收款二维码（图片链接）</label>
-          <input type="text" id="alipayQrcodeUrl" class="form-input" placeholder="输入支付宝收款码图片链接" />
-        </div>
-        <div class="form-group">
-          <label>微信收款二维码（图片链接）</label>
-          <input type="text" id="wechatQrcodeUrl" class="form-input" placeholder="输入微信收款码图片链接" />
-        </div>
-        <div class="form-group">
-          <label>联系信息（选填）</label>
-          <input type="text" id="contactInfo" class="form-input" placeholder="如：微信号、手机号" />
-        </div>
-        <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
-          <div id="qrcodePreview" style="display:flex;gap:20px;flex-wrap:wrap;">
-            <div id="alipayPreview" style="display:none;text-align:center;">
-              <p style="font-size:13px;color:#666;margin-bottom:8px;">支付宝收款码</p>
-              <img id="alipayPreviewImg" src="" style="width:150px;height:150px;border:1px solid #ddd;border-radius:8px;object-fit:cover;" />
-            </div>
-            <div id="wechatPreview" style="display:none;text-align:center;">
-              <p style="font-size:13px;color:#666;margin-bottom:8px;">微信收款码</p>
-              <img id="wechatPreviewImg" src="" style="width:150px;height:150px;border:1px solid #ddd;border-radius:8px;object-fit:cover;" />
-            </div>
-          </div>
-        </div>
-        <div style="margin-top:20px;">
-          <button class="btn btn-primary" onclick="savePaymentConfig()">保存配置</button>
-        </div>
-      </div>
-    </div>
-  </div>
+// Alipay/WeChat preview
+document.getElementById('alipayUrl').addEventListener('input', function() {
+  const el = document.getElementById('alipayPreview');
+  if (this.value) { el.src = this.value; el.style.display = 'block'; } else { el.style.display = 'none'; }
+});
+document.getElementById('wechatUrl').addEventListener('input', function() {
+  const el = document.getElementById('wechatPreview');
+  if (this.value) { el.src = this.value; el.style.display = 'block'; } else { el.style.display = 'none'; }
+});
+</script>
 </body>
 </html>
