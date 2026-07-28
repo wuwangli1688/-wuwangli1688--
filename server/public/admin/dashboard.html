@@ -296,9 +296,9 @@ async function loadRecentUsers() {
   if (!res) return;
   const data = await res.json();
   document.getElementById('userStatsBody').innerHTML = (data.users || []).map(u => `
-    <tr class="clickable" onclick="showUserDetail('${u.user_id}')">
-      <td><strong>${u.display_name || '未设置'}</strong></td>
-      <td style="font-size:12px;color:#555;">${u.login_name || '-'}</td>
+    <tr class="clickable" onclick="showUserDetail('${u.id}')">
+      <td><strong>${u.display_name || decodeURIComponent(u.login_name || '') || '未设置'}</strong></td>
+      <td style="font-size:12px;color:#555;">${decodeURIComponent(u.login_name || '') || '-'}</td>
       <td>${u.subAccountCount || 0}</td>
       <td>${u.storeCount || 0}</td>
       <td>${u.weekTxCount || 0}</td>
@@ -318,14 +318,21 @@ async function loadUsers() {
   if (!res) return;
   const data = await res.json();
   document.getElementById('usersBody').innerHTML = (data.users || []).map(u => `
-    <tr class="clickable" onclick="showUserDetail('${u.user_id}')">
-      <td><strong>${u.display_name || '未设置'}</strong></td>
-      <td style="font-size:12px;color:#555;">${u.login_name || '-'}</td>
+    <tr class="clickable" onclick="showUserDetail('${u.id}')">
+      <td>
+        <strong>${u.display_name || decodeURIComponent(u.login_name || '') || '未设置'}</strong>
+        ${u.platform === 'wechat' ? '<span style="font-size:11px;color:#07c160;margin-left:4px;">微信</span>' : '<span style="font-size:11px;color:#302b63;margin-left:4px;">APP</span>'}
+        ${u.tags && u.tags.length ? u.tags.map(t => `<span class="tag-badge">${t}</span>`).join('') : ''}
+      </td>
+      <td style="font-size:12px;color:#555;">${decodeURIComponent(u.login_name || '') || '-'}</td>
       <td>${u.role === 'parent' ? '👑 主账号' : '👤 子账号'}</td>
       <td>${u.subAccountCount || 0}</td>
       <td>${u.storeCount || 0}</td>
       <td><span class="badge ${u.subscription?.plan_type === 'pro' ? 'badge-pro' : 'badge-free'}">${u.subscription?.plan_type === 'pro' ? '专业版' : '免费版'}</span></td>
-      <td><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();showUserDetail('${u.user_id}')">详情</button></td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();showUserDetail('${u.id}')">详情</button>
+        <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();showTagsModal('${u.id}','${u.display_name || u.login_name || ''}')">🏷️</button>
+      </td>
     </tr>
   `).join('');
   renderPagination('usersPagination', data.total, page, (p) => { currentPage.users = p; loadUsers(); });
@@ -425,9 +432,9 @@ async function showUserDetail(userId) {
   let childrenHtml = '';
   if (u.children && u.children.length > 0) {
     childrenHtml = u.children.map(c => `
-      <div class="info-row">
+      <div class="info-row" style="padding-left:20px;border-left:2px solid #e0e0e0;margin:4px 0;">
         <span class="label">${c.display_name || '未命名'} (${c.login_name || '-'})</span>
-        <span class="value">${c.role === 'parent' ? '主账号' : '子账号'} · ${new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
+        <span class="value" style="font-size:12px;color:#888;">${new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
       </div>
     `).join('');
   } else {
@@ -446,14 +453,35 @@ async function showUserDetail(userId) {
     ordersHtml = '<div class="info-row"><span class="label" style="color:#999;">暂无订单记录</span></div>';
   }
 
-  document.getElementById('detailTitle').textContent = '👤 ' + (u.display_name || '用户详情');
+  // Activity logs
+  let activityHtml = '';
+  if (u.activity && u.activity.length > 0) {
+    activityHtml = u.activity.map(a => `
+      <div class="info-row">
+        <span class="label">${a.action}</span>
+        <span class="value" style="font-size:12px;color:#888;">${new Date(a.created_at).toLocaleString('zh-CN')}</span>
+      </div>
+    `).join('');
+  } else {
+    activityHtml = '<div class="info-row"><span class="label" style="color:#999;">暂无活跃记录</span></div>';
+  }
+
+  // Tags
+  const tagsHtml = u.tags && u.tags.length ? u.tags.map(t => `<span class="tag-badge" style="cursor:pointer;" onclick="removeTag('${u.id}','${t}')">${t} ✕</span>`).join('') : '<span style="color:#999;">无标签</span>';
+
+  document.getElementById('detailTitle').textContent = '👤 ' + (u.display_name || u.login_name || '用户详情');
   document.getElementById('detailContent').innerHTML = `
     <div style="display:flex;gap:24px;flex-wrap:wrap;">
       <div style="flex:1;min-width:200px;">
         <h3>基本信息</h3>
-        <div class="info-row"><span class="label">用户ID</span><span class="value" style="font-family:monospace;font-size:12px;">${u.user_id}</span></div>
+        <div class="info-row"><span class="label">用户ID</span><span class="value" style="font-family:monospace;font-size:12px;">${u.id || u.user_id || '-'}</span></div>
         <div class="info-row"><span class="label">登录账号</span><span class="value">${u.login_name || '-'}</span></div>
-        <div class="info-row"><span class="label">用户名</span><span class="value">${u.display_name || '未设置'}</span></div>
+        <div class="info-row"><span class="label">用户名</span><span class="value">
+          ${u.display_name || '未设置'}
+          <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="showNameHistory('${u.id}')">📜 历史</button>
+          <button class="btn btn-sm btn-outline" style="margin-left:4px;" onclick="editDisplayName('${u.id}','${u.display_name || u.login_name || ''}')">✏️ 修改</button>
+        </span></div>
+        <div class="info-row"><span class="label">标签</span><span class="value">${tagsHtml} <button class="btn btn-sm btn-outline" style="margin-left:4px;" onclick="showTagsModal('${u.id}','${u.display_name || u.login_name || ''}')">➕ 添加</button></span></div>
         <div class="info-row"><span class="label">角色</span><span class="value">${u.role === 'parent' ? '👑 主账号' : '👤 子账号'}</span></div>
         <div class="info-row"><span class="label">注册时间</span><span class="value">${u.created_at ? new Date(u.created_at).toLocaleString('zh-CN') : '-'}</span></div>
       </div>
@@ -474,14 +502,101 @@ async function showUserDetail(userId) {
     ${childrenHtml}
     <h3>订单记录 (${u.orders?.length || 0})</h3>
     ${ordersHtml}
+    <h3>📊 活跃记录</h3>
+    ${activityHtml}
     <div class="actions" style="margin-top:16px;">
-      <button class="btn btn-primary" onclick="closeUserDetail();openEditModal('${u.user_id}','${u.login_name || u.display_name || ''}','${u.subscription?.plan_type || 'free'}')">编辑订阅</button>
+      <button class="btn btn-primary" onclick="closeUserDetail();openEditModal('${u.id}','${u.login_name || u.display_name || ''}','${u.subscription?.plan_type || 'free'}')">编辑订阅</button>
     </div>
   `;
 }
 
 function closeUserDetail() {
   document.getElementById('userDetailModal').classList.remove('active');
+}
+
+// Display Name Edit
+async function editDisplayName(userId, currentName) {
+  const newName = prompt('请输入新的用户名：', currentName);
+  if (!newName || newName === currentName) return;
+  const res = await apiFetch(API + '/users/' + userId + '/display-name', {
+    method: 'PUT',
+    body: JSON.stringify({ display_name: newName })
+  });
+  if (res && res.ok) {
+    alert('✅ 用户名已更新');
+    showUserDetail(userId);
+    loadUsers();
+  } else {
+    alert('❌ 更新失败');
+  }
+}
+
+// Name History
+async function showNameHistory(userId) {
+  document.getElementById('nameHistoryModal').classList.add('active');
+  document.getElementById('nameHistoryContent').innerHTML = '<div style="text-align:center;padding:20px;color:#999;">⏳ 加载中...</div>';
+  const res = await apiFetch(API + '/users/' + userId + '/display-name-history');
+  if (!res) return;
+  const data = await res.json();
+  const history = data.history || [];
+  document.getElementById('nameHistoryContent').innerHTML = history.length ? history.map(h => `
+    <div class="info-row" style="padding:8px 0;border-bottom:1px solid #f0f0f0;">
+      <span class="label">${h.old_name || '-'} → <strong>${h.new_name}</strong></span>
+      <span class="value" style="font-size:12px;color:#888;">${h.changed_by === 'admin' ? '👑 管理员' : '👤 用户'} · ${new Date(h.created_at).toLocaleString('zh-CN')}</span>
+    </div>
+  `).join('') : '<div style="text-align:center;padding:20px;color:#999;">暂无修改记录</div>';
+}
+
+function closeNameHistory() {
+  document.getElementById('nameHistoryModal').classList.remove('active');
+}
+
+// Tags Modal
+async function showTagsModal(userId, userName) {
+  document.getElementById('tagsModal').classList.add('active');
+  document.getElementById('tagsModalTitle').textContent = '🏷️ 标签管理 - ' + userName;
+  document.getElementById('tagsModal').dataset.userId = userId;
+  document.getElementById('newTagInput').value = '';
+  document.getElementById('tagsList').innerHTML = '<div style="text-align:center;padding:20px;color:#999;">⏳ 加载中...</div>';
+  
+  const res = await apiFetch(API + '/users/' + userId + '/tags');
+  if (!res) return;
+  const data = await res.json();
+  const tags = data.tags || [];
+  document.getElementById('tagsList').innerHTML = tags.length ? tags.map(t => `
+    <span class="tag-badge" style="font-size:14px;padding:6px 12px;margin:4px;">
+      ${t}
+      <span style="cursor:pointer;margin-left:6px;opacity:0.7;" onclick="removeTag('${userId}','${t}')">✕</span>
+    </span>
+  `).join('') : '<div style="text-align:center;padding:20px;color:#999;">暂无标签，请添加</div>';
+}
+
+function closeTagsModal() {
+  document.getElementById('tagsModal').classList.remove('active');
+}
+
+async function addTag() {
+  const userId = document.getElementById('tagsModal').dataset.userId;
+  const tag = document.getElementById('newTagInput').value.trim();
+  if (!tag) return;
+  const res = await apiFetch(API + '/users/' + userId + '/tags', {
+    method: 'POST',
+    body: JSON.stringify({ tag })
+  });
+  if (res && res.ok) {
+    document.getElementById('newTagInput').value = '';
+    showTagsModal(userId, document.getElementById('tagsModalTitle').textContent.replace('🏷️ 标签管理 - ', ''));
+  }
+}
+
+async function removeTag(userId, tag) {
+  const res = await apiFetch(API + '/users/' + userId + '/tags/' + encodeURIComponent(tag), {
+    method: 'DELETE'
+  });
+  if (res && res.ok) {
+    showUserDetail(userId);
+    loadUsers();
+  }
 }
 
 // Edit Subscription Modal
@@ -562,5 +677,32 @@ document.getElementById('wechatUrl').addEventListener('input', function() {
   if (this.value) { el.src = this.value; el.style.display = 'block'; } else { el.style.display = 'none'; }
 });
 </script>
+
+<!-- Name History Modal -->
+<div id="nameHistoryModal" class="modal">
+  <div class="modal-content" style="max-width:500px;">
+    <div class="modal-header">
+      <h3>📝 用户名修改历史</h3>
+      <span class="close" onclick="closeNameHistory()">&times;</span>
+    </div>
+    <div id="nameHistoryContent" style="padding:10px 0;"></div>
+  </div>
+</div>
+
+<!-- Tags Modal -->
+<div id="tagsModal" class="modal">
+  <div class="modal-content" style="max-width:500px;">
+    <div class="modal-header">
+      <h3 id="tagsModalTitle">🏷️ 标签管理</h3>
+      <span class="close" onclick="closeTagsModal()">&times;</span>
+    </div>
+    <div style="display:flex;gap:8px;padding:10px 0;">
+      <input id="newTagInput" type="text" placeholder="输入标签名称" style="flex:1;padding:8px 12px;border:1px solid #ddd;border-radius:8px;" onkeydown="if(event.key==='Enter')addTag()">
+      <button onclick="addTag()" style="padding:8px 16px;background:#4F46E5;color:white;border:none;border-radius:8px;cursor:pointer;">添加</button>
+    </div>
+    <div id="tagsList" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 0;"></div>
+  </div>
+</div>
+
 </body>
 </html>

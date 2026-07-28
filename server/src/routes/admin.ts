@@ -476,6 +476,187 @@ router.get('/users/search', async (req: Request, res: Response) => {
   }
 });
 
+// ==========================================
+// Display Name History Routes
+// ==========================================
+
+/**
+ * PUT /api/v1/admin/users/:id/display-name
+ * Update user display name and record history
+ * Body: { display_name: string }
+ */
+router.put('/users/:id/display-name', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { display_name } = req.body;
+    
+    if (!display_name || display_name.trim().length === 0) {
+      return res.status(400).json({ error: '显示名称不能为空' });
+    }
+    
+    // Get current display name
+    const currentQuery = await queryOne('SELECT display_name FROM user_profiles WHERE id = $1', [id]);
+    const oldName = currentQuery?.display_name || '';
+    
+    // Update display name
+    await execute('UPDATE user_profiles SET display_name = $1 WHERE id = $2', [display_name.trim(), id]);
+    
+    // If no row was updated, insert into user_profiles
+    if (currentQuery === null) {
+      await execute('INSERT INTO user_profiles (id, display_name, role) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET display_name = $2', [id, display_name.trim(), 'parent']);
+    }
+    
+    // Record history
+    await execute(
+      'INSERT INTO display_name_history (user_id, old_name, new_name) VALUES ($1, $2, $3)',
+      [id, oldName, display_name.trim()]
+    );
+    
+    res.json({ success: true, display_name: display_name.trim() });
+  } catch (error) {
+    console.error('更新显示名称失败:', error);
+    res.status(500).json({ error: '更新显示名称失败' });
+  }
+});
+
+/**
+ * GET /api/v1/admin/users/:id/display-name-history
+ * Get display name change history for a user
+ */
+router.get('/users/:id/display-name-history', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const history = await queryAll(
+      'SELECT * FROM display_name_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [id]
+    );
+    res.json({ history });
+  } catch (error) {
+    console.error('获取显示名称历史失败:', error);
+    res.status(500).json({ error: '获取显示名称历史失败' });
+  }
+});
+
+// ==========================================
+// User Tags Routes
+// ==========================================
+
+/**
+ * GET /api/v1/admin/users/:id/tags
+ * Get tags for a user
+ */
+router.get('/users/:id/tags', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const tags = await queryAll('SELECT tag, created_at FROM user_tags WHERE user_id = $1 ORDER BY created_at', [id]);
+    res.json({ tags: tags.map(t => t.tag) });
+  } catch (error) {
+    console.error('获取用户标签失败:', error);
+    res.status(500).json({ error: '获取用户标签失败' });
+  }
+});
+
+/**
+ * POST /api/v1/admin/users/:id/tags
+ * Add a tag to a user
+ * Body: { tag: string }
+ */
+router.post('/users/:id/tags', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tag } = req.body;
+    
+    if (!tag || tag.trim().length === 0) {
+      return res.status(400).json({ error: '标签不能为空' });
+    }
+    
+    await execute(
+      'INSERT INTO user_tags (user_id, tag) VALUES ($1, $2) ON CONFLICT (user_id, tag) DO NOTHING',
+      [id, tag.trim()]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('添加标签失败:', error);
+    res.status(500).json({ error: '添加标签失败' });
+  }
+});
+
+/**
+ * DELETE /api/v1/admin/users/:id/tags/:tag
+ * Remove a tag from a user
+ */
+router.delete('/users/:id/tags/:tag', async (req, res) => {
+  try {
+    const { id, tag } = req.params;
+    await execute('DELETE FROM user_tags WHERE user_id = $1 AND tag = $2', [id, decodeURIComponent(tag)]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('删除标签失败:', error);
+    res.status(500).json({ error: '删除标签失败' });
+  }
+});
+
+// ==========================================
+// Activity Logs Routes
+// ==========================================
+
+/**
+ * GET /api/v1/admin/users/:id/activity
+ * Get activity logs for a user
+ */
+router.get('/users/:id/activity', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { page = '1', limit = '20' } = req.query;
+    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+    
+    const totalResult = await queryOne('SELECT count(*) as count FROM activity_logs WHERE user_id = $1', [id]);
+    const total = parseInt(totalResult?.count || '0');
+    
+    const logs = await queryAll(
+      'SELECT * FROM activity_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+      [id, parseInt(limit as string), offset]
+    );
+    
+    // Also get activity summary
+    const summary = await queryAll(
+      `SELECT 
+        activity_type,
+        count(*) as count,
+        max(created_at) as last_active
+      FROM activity_logs 
+      WHERE user_id = $1 
+      GROUP BY activity_type 
+      ORDER BY count DESC`,
+      [id]
+    );
+    
+    res.json({ logs, total, summary });
+  } catch (error) {
+    console.error('获取活动记录失败:', error);
+    res.status(500).json({ error: '获取活动记录失败' });
+  }
+});
+
+/**
+ * POST /api/v1/admin/activity/seed
+ * Seed test activity data for demo purposes
+ */
+router.post('/activity/seed', async (req, res) => {
+  try {
+    const { user_id, activity_type = 'login', description = '测试活动' } = req.body;
+    await execute(
+      'INSERT INTO activity_logs (user_id, activity_type, description) VALUES ($1, $2, $3)',
+      [user_id, activity_type, description]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('创建活动记录失败:', error);
+    res.status(500).json({ error: '创建活动记录失败' });
+  }
+});
+
 /** ==================== 用户详情 ==================== */
 router.get('/users/:id', async (req: Request, res: Response) => {
   try {
