@@ -30,11 +30,11 @@ adminLoginRouter.post('/login', (req: Request, res: Response) => {
 /** ==================== 仪表盘 ==================== */
 router.get('/dashboard', async (req: Request, res: Response) => {
   try {
-    // 总用户数
-    const totalUsers = await queryCount('SELECT count(*) FROM user_profiles');
+    // 总用户数（auth.users 包含所有用户）
+    const totalUsers = await queryCount('SELECT count(*) FROM auth.users');
 
-    // 主账号数
-    const parentUsers = await queryCount("SELECT count(*) FROM user_profiles WHERE role = 'parent'");
+    // 主账号数（user_profiles 中 role=parent 或 没有 user_profiles 记录的用户默认为主账号）
+    const parentUsers = await queryCount("SELECT count(*) FROM auth.users a LEFT JOIN user_profiles u ON a.id = u.id WHERE (u.role IS NULL OR u.role = 'parent')");
 
     // 子账号数
     const childUsers = await queryCount("SELECT count(*) FROM user_profiles WHERE role = 'child'");
@@ -101,20 +101,30 @@ router.get('/users', async (req: Request, res: Response) => {
     const search = req.query.search as string || '';
     const offset = (page - 1) * limit;
 
-    let countSql = 'SELECT count(*) FROM user_profiles';
-    let sql = 'SELECT id, display_name, role, parent_user_id, created_at FROM user_profiles';
+    // 使用 auth.users 作为主表（所有用户都有记录），LEFT JOIN user_profiles（部分用户可能没有）
+    let countSql = 'SELECT count(*) FROM auth.users';
+    let sql = `SELECT a.id,
+               COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
+               COALESCE(u.role, 'parent') AS role,
+               u.parent_user_id,
+               COALESCE(u.created_at, a.created_at) AS created_at,
+               SPLIT_PART(a.email, '@', 1) AS login_name,
+               a.email AS account_email,
+               COALESCE(u.platform, 'app') AS platform
+               FROM auth.users a
+               LEFT JOIN user_profiles u ON a.id = u.id`;
     const params: any[] = [];
     const countParams: any[] = [];
 
     if (search) {
-      const whereClause = ` WHERE display_name ILIKE $1`;
+      const whereClause = ` WHERE u.display_name ILIKE $1 OR a.email ILIKE $1 OR SPLIT_PART(a.email, '@', 1) ILIKE $1`;
       sql += whereClause;
-      countSql += whereClause;
+      countSql += ` a LEFT JOIN user_profiles u ON a.id = u.id` + whereClause;
       params.push(`%${search}%`);
       countParams.push(`%${search}%`);
     }
 
-    sql += ' ORDER BY created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
+    sql += ' ORDER BY a.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(limit, offset);
 
     const total = await queryCount(countSql, countParams);
@@ -146,7 +156,11 @@ router.get('/users', async (req: Request, res: Response) => {
     const finalUsers = await Promise.all(enrichedUsers.map(async (u: any) => {
       if (u.role === 'parent') {
         const childProfiles = await queryAll(
-          'SELECT id, display_name, created_at FROM user_profiles WHERE parent_user_id = $1',
+          `SELECT u.id, u.display_name, u.created_at,
+                  COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name
+           FROM user_profiles u
+           LEFT JOIN auth.users a ON u.id = a.id
+           WHERE u.parent_user_id = $1`,
           [u.id]
         );
 
@@ -235,13 +249,17 @@ router.get('/feedbacks', async (req: Request, res: Response) => {
       [limit, offset]
     );
 
-    // 获取反馈用户的用户名
+    // 获取反馈用户的用户名（使用 auth.users 作为主表，兼容没有 user_profiles 的用户）
     const userIds = [...new Set(feedbacks.map((f: any) => f.user_id))];
     let profiles: any[] = [];
     if (userIds.length > 0) {
       const placeholders = userIds.map((_, i) => `$${i + 1}`).join(',');
       profiles = await queryAll(
-        `SELECT id, display_name FROM user_profiles WHERE id IN (${placeholders})`,
+        `SELECT a.id, COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
+                SPLIT_PART(a.email, '@', 1) AS login_name
+         FROM auth.users a
+         LEFT JOIN user_profiles u ON a.id = u.id
+         WHERE a.id IN (${placeholders})`,
         userIds
       );
     }
@@ -250,6 +268,7 @@ router.get('/feedbacks', async (req: Request, res: Response) => {
     const enriched = feedbacks.map((f: any) => ({
       ...f,
       user_name: profileMap.get(f.user_id)?.display_name || '未知',
+      login_name: profileMap.get(f.user_id)?.login_name || '',
     }));
 
     res.json({
@@ -299,7 +318,11 @@ router.get('/orders', async (req: Request, res: Response) => {
     if (userIds.length > 0) {
       const placeholders = userIds.map((_, i) => `$${i + 1}`).join(',');
       profiles = await queryAll(
-        `SELECT id, display_name FROM user_profiles WHERE id IN (${placeholders})`,
+        `SELECT a.id, COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
+                SPLIT_PART(a.email, '@', 1) AS login_name
+         FROM auth.users a
+         LEFT JOIN user_profiles u ON a.id = u.id
+         WHERE a.id IN (${placeholders})`,
         userIds
       );
     }
@@ -308,6 +331,7 @@ router.get('/orders', async (req: Request, res: Response) => {
     const enriched = orders.map((o: any) => ({
       ...o,
       user_name: profileMap.get(o.user_id)?.display_name || '未知',
+      login_name: profileMap.get(o.user_id)?.login_name || '',
     }));
 
     res.json({
@@ -426,16 +450,22 @@ router.get('/users/search', async (req: Request, res: Response) => {
 
     const searchParam = `%${q}%`;
     const total = await queryCount(
-      `SELECT count(*) FROM user_profiles
-       WHERE display_name ILIKE $1 OR id::text ILIKE $1`,
+      `SELECT count(*) FROM auth.users a
+       LEFT JOIN user_profiles u ON a.id = u.id
+       WHERE u.display_name ILIKE $1 OR a.email ILIKE $1 OR a.id::text ILIKE $1`,
       [searchParam]
     );
 
     const users = await queryAll(
-      `SELECT id, display_name, role, parent_user_id, created_at
-       FROM user_profiles
-       WHERE display_name ILIKE $1 OR id::text ILIKE $1
-       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      `SELECT a.id, COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
+              COALESCE(u.role, 'parent') AS role, u.parent_user_id,
+              COALESCE(u.created_at, a.created_at) AS created_at,
+              SPLIT_PART(a.email, '@', 1) AS login_name, a.email AS account_email,
+              COALESCE(u.platform, 'app') AS platform
+       FROM auth.users a
+       LEFT JOIN user_profiles u ON a.id = u.id
+       WHERE u.display_name ILIKE $1 OR a.email ILIKE $1 OR a.id::text ILIKE $1
+       ORDER BY a.created_at DESC LIMIT $2 OFFSET $3`,
       [searchParam, limit, offset]
     );
 
@@ -452,7 +482,16 @@ router.get('/users/:id', async (req: Request, res: Response) => {
     const { id } = req.params;
 
     const user = await queryOne(
-      'SELECT id, display_name, role, parent_user_id, created_at FROM user_profiles WHERE id = $1',
+      `SELECT a.id,
+              COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
+              COALESCE(u.role, 'parent') AS role,
+              u.parent_user_id,
+              COALESCE(u.created_at, a.created_at) AS created_at,
+              COALESCE(u.platform, 'app') AS platform,
+              SPLIT_PART(a.email, '@', 1) AS login_name, a.email AS account_email
+       FROM auth.users a
+       LEFT JOIN user_profiles u ON a.id = u.id
+       WHERE a.id = $1`,
       [id]
     );
 
@@ -479,7 +518,11 @@ router.get('/users/:id', async (req: Request, res: Response) => {
 
     // 获取子账号
     const children = await queryAll(
-      'SELECT id, display_name, role, created_at FROM user_profiles WHERE parent_user_id = $1',
+      `SELECT u.id, u.display_name, u.role, u.created_at,
+              COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name
+       FROM user_profiles u
+       LEFT JOIN auth.users a ON u.id = a.id
+       WHERE u.parent_user_id = $1`,
       [id]
     );
 

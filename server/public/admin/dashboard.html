@@ -125,7 +125,7 @@ tr.clickable { cursor: pointer; }
   <div class="section-title">📈 近期用户活跃</div>
   <div class="table-container">
     <table>
-      <thead><tr><th>主账号</th><th>邮箱</th><th>子账号数</th><th>门店数</th><th>本周交易</th><th>订阅</th><th>最后活跃</th></tr></thead>
+      <thead><tr><th>主账号</th><th>登录账号</th><th>子账号数</th><th>门店数</th><th>本周交易</th><th>订阅</th><th>注册时间</th></tr></thead>
       <tbody id="userStatsBody"></tbody>
     </table>
   </div>
@@ -141,7 +141,7 @@ tr.clickable { cursor: pointer; }
   </div>
   <div class="table-container">
     <table>
-      <thead><tr><th>用户名</th><th>邮箱</th><th>角色</th><th>子账号数</th><th>门店数</th><th>订阅</th><th>操作</th></tr></thead>
+      <thead><tr><th>用户名</th><th>登录账号</th><th>角色</th><th>子账号数</th><th>门店数</th><th>订阅</th><th>操作</th></tr></thead>
       <tbody id="usersBody"></tbody>
     </table>
     <div class="pagination" id="usersPagination"></div>
@@ -278,26 +278,34 @@ async function loadDashboard() {
   if (!res) return;
   const data = await res.json();
   document.getElementById('statsGrid').innerHTML = `
-    <div class="stat-card"><div class="label">总主账号</div><div class="value">${data.totalMainAccounts || 0}</div></div>
-    <div class="stat-card"><div class="label">总子账号</div><div class="value">${data.totalSubAccounts || 0}</div></div>
-    <div class="stat-card"><div class="label">专业版用户</div><div class="value">${data.proUsers || 0}</div><div class="sub">免费 ${data.freeUsers || 0}</div></div>
-    <div class="stat-card"><div class="label">总收入</div><div class="value">¥${data.totalRevenue || 0}</div><div class="sub">本月 ¥${data.monthlyRevenue || 0}</div></div>
+    <div class="stat-card"><div class="label">总主账号</div><div class="value">${data.parentUsers || 0}</div></div>
+    <div class="stat-card"><div class="label">总子账号</div><div class="value">${data.childUsers || 0}</div></div>
+    <div class="stat-card"><div class="label">专业版用户</div><div class="value">${data.proCount || 0}</div><div class="sub">免费 ${data.freeCount || 0}</div></div>
+    <div class="stat-card"><div class="label">总收入</div><div class="value">¥${data.totalRevenue || 0}</div><div class="sub">本月 ¥${data.thisMonthRevenue || 0}</div></div>
     <div class="stat-card"><div class="label">今日活跃</div><div class="value">${data.todayActive || 0}</div><div class="sub">本周 ${data.weekActive || 0}</div></div>
-    <div class="stat-card"><div class="label">总订单</div><div class="value">${data.totalOrders || 0}</div><div class="sub">待处理 ${data.pendingOrders || 0}</div></div>
+    <div class="stat-card"><div class="label">总订单</div><div class="value">${data.totalOrders || 0}</div><div class="sub">反馈 ${data.feedbackCount || 0}</div></div>
   `;
-  if (data.users) {
-    document.getElementById('userStatsBody').innerHTML = data.users.map(u => `
-      <tr class="clickable" onclick="showUserDetail('${u.id}')">
-        <td><strong>${u.username || '未设置'}</strong></td>
-        <td>${u.email || '-'}</td>
-        <td>${u.subAccountCount || 0}</td>
-        <td>${u.storeCount || 0}</td>
-        <td>${u.weekTransactions || 0}</td>
-        <td><span class="badge ${u.plan === 'pro' ? 'badge-pro' : 'badge-free'}">${u.plan === 'pro' ? '专业版' : '免费版'}</span></td>
-        <td>${u.lastActive || '-'}</td>
-      </tr>
-    `).join('');
-  }
+  // 加载近期活跃用户列表
+  document.getElementById('userStatsBody').innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:20px;">⏳ 加载中...</td></tr>';
+  loadRecentUsers();
+}
+
+// 近期活跃用户
+async function loadRecentUsers() {
+  const res = await apiFetch(API + '/users?page=1&limit=10');
+  if (!res) return;
+  const data = await res.json();
+  document.getElementById('userStatsBody').innerHTML = (data.users || []).map(u => `
+    <tr class="clickable" onclick="showUserDetail('${u.user_id}')">
+      <td><strong>${u.display_name || '未设置'}</strong></td>
+      <td style="font-size:12px;color:#555;">${u.login_name || '-'}</td>
+      <td>${u.subAccountCount || 0}</td>
+      <td>${u.storeCount || 0}</td>
+      <td>${u.weekTxCount || 0}</td>
+      <td><span class="badge ${u.subscription?.plan_type === 'pro' ? 'badge-pro' : 'badge-free'}">${u.subscription?.plan_type === 'pro' ? '专业版' : '免费版'}</span></td>
+      <td style="font-size:12px;color:#888;">${u.created_at ? new Date(u.created_at).toLocaleDateString('zh-CN') : '-'}</td>
+    </tr>
+  `).join('');
 }
 
 // Users
@@ -310,14 +318,14 @@ async function loadUsers() {
   if (!res) return;
   const data = await res.json();
   document.getElementById('usersBody').innerHTML = (data.users || []).map(u => `
-    <tr class="clickable" onclick="showUserDetail('${u.id}')">
-      <td><strong>${u.username || '未设置'}</strong></td>
-      <td>${u.email || '-'}</td>
+    <tr class="clickable" onclick="showUserDetail('${u.user_id}')">
+      <td><strong>${u.display_name || '未设置'}</strong></td>
+      <td style="font-size:12px;color:#555;">${u.login_name || '-'}</td>
       <td>${u.role === 'parent' ? '👑 主账号' : '👤 子账号'}</td>
       <td>${u.subAccountCount || 0}</td>
       <td>${u.storeCount || 0}</td>
-      <td><span class="badge ${u.plan === 'pro' ? 'badge-pro' : 'badge-free'}">${u.plan === 'pro' ? '专业版' : '免费版'}</span></td>
-      <td><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openEditModal('${u.id}','${u.email || ''}','${u.plan}')">编辑订阅</button></td>
+      <td><span class="badge ${u.subscription?.plan_type === 'pro' ? 'badge-pro' : 'badge-free'}">${u.subscription?.plan_type === 'pro' ? '专业版' : '免费版'}</span></td>
+      <td><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();showUserDetail('${u.user_id}')">详情</button></td>
     </tr>
   `).join('');
   renderPagination('usersPagination', data.total, page, (p) => { currentPage.users = p; loadUsers(); });
@@ -335,9 +343,9 @@ async function loadOrders() {
   const data = await res.json();
   document.getElementById('ordersBody').innerHTML = (data.orders || []).map(o => `
     <tr>
-      <td style="font-size:12px;color:#888;font-family:monospace;">${o.order_id || o.id?.substring(0,12)}</td>
-      <td style="font-family:monospace;font-size:12px;">${o.user_email || o.user_id?.substring(0,12)}</td>
-      <td>${o.plan_type === 'pro' ? '专业版' : o.plan_type} ${o.period === 'year' ? '(年付)' : '(月付)'}</td>
+      <td style="font-size:12px;color:#888;font-family:monospace;">${o.id?.substring(0,13)}</td>
+      <td style="font-family:monospace;font-size:12px;">${o.login_name || o.user_id?.substring(0,12)}</td>
+      <td>${o.plan_type === 'pro' ? '专业版' : o.plan_type}</td>
       <td><strong>¥${o.amount}</strong></td>
       <td><span class="badge ${o.status === 'paid' ? 'badge-paid' : 'badge-pending'}">${o.status === 'paid' ? '已付款' : '待付款'}</span></td>
       <td style="font-size:12px;color:#888;">${o.created_at ? new Date(o.created_at).toLocaleString('zh-CN') : '-'}</td>
@@ -355,7 +363,7 @@ async function loadFeedbacks() {
   const data = await res.json();
   document.getElementById('feedbacksBody').innerHTML = (data.feedbacks || []).map(f => `
     <tr>
-      <td style="font-family:monospace;font-size:12px;">${f.email || f.user_id?.substring(0,12)}</td>
+      <td style="font-family:monospace;font-size:12px;">${f.login_name || f.user_id?.substring(0,12)}</td>
       <td style="max-width:300px;word-break:break-all;">${f.content}</td>
       <td>${f.contact || '-'}</td>
       <td style="font-size:12px;color:#888;">${f.created_at ? new Date(f.created_at).toLocaleString('zh-CN') : '-'}</td>
@@ -412,13 +420,13 @@ async function showUserDetail(userId) {
 
   const planLabel = u.subscription?.plan_type === 'pro' ? '专业版' : '免费版';
   const planBadge = u.subscription?.plan_type === 'pro' ? 'badge-pro' : 'badge-free';
-  const subEnd = u.subscription?.end_date ? new Date(u.subscription.end_date).toLocaleDateString('zh-CN') : '-';
+  const subEnd = u.subscription?.expires_at ? new Date(u.subscription.expires_at).toLocaleDateString('zh-CN') : '-';
 
   let childrenHtml = '';
   if (u.children && u.children.length > 0) {
     childrenHtml = u.children.map(c => `
       <div class="info-row">
-        <span class="label">${c.display_name || '未命名'}</span>
+        <span class="label">${c.display_name || '未命名'} (${c.login_name || '-'})</span>
         <span class="value">${c.role === 'parent' ? '主账号' : '子账号'} · ${new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
       </div>
     `).join('');
@@ -430,7 +438,7 @@ async function showUserDetail(userId) {
   if (u.orders && u.orders.length > 0) {
     ordersHtml = u.orders.map(o => `
       <div class="info-row">
-        <span class="label">${o.plan_type === 'pro' ? '专业版' : o.plan_type} ${o.period === 'year' ? '(年付)' : '(月付)'} · ¥${o.amount}</span>
+        <span class="label">${o.plan_type === 'pro' ? '专业版' : o.plan_type} · ¥${o.amount}</span>
         <span class="value"><span class="badge ${o.status === 'paid' ? 'badge-paid' : 'badge-pending'}">${o.status === 'paid' ? '已付款' : '待付款'}</span> ${new Date(o.created_at).toLocaleDateString('zh-CN')}</span>
       </div>
     `).join('');
@@ -443,7 +451,8 @@ async function showUserDetail(userId) {
     <div style="display:flex;gap:24px;flex-wrap:wrap;">
       <div style="flex:1;min-width:200px;">
         <h3>基本信息</h3>
-        <div class="info-row"><span class="label">用户ID</span><span class="value" style="font-family:monospace;font-size:12px;">${u.id}</span></div>
+        <div class="info-row"><span class="label">用户ID</span><span class="value" style="font-family:monospace;font-size:12px;">${u.user_id}</span></div>
+        <div class="info-row"><span class="label">登录账号</span><span class="value">${u.login_name || '-'}</span></div>
         <div class="info-row"><span class="label">用户名</span><span class="value">${u.display_name || '未设置'}</span></div>
         <div class="info-row"><span class="label">角色</span><span class="value">${u.role === 'parent' ? '👑 主账号' : '👤 子账号'}</span></div>
         <div class="info-row"><span class="label">注册时间</span><span class="value">${u.created_at ? new Date(u.created_at).toLocaleString('zh-CN') : '-'}</span></div>
@@ -452,7 +461,6 @@ async function showUserDetail(userId) {
         <h3>订阅信息</h3>
         <div class="info-row"><span class="label">当前方案</span><span class="value"><span class="badge ${planBadge}">${planLabel}</span></span></div>
         <div class="info-row"><span class="label">到期时间</span><span class="value">${subEnd}</span></div>
-        <div class="info-row"><span class="label">多店铺</span><span class="value">${u.subscription?.extra_stores || 0} 个额外店铺</span></div>
         <div class="info-row"><span class="label">门店数</span><span class="value">${u.storeCount || 0}</span></div>
       </div>
       <div style="flex:1;min-width:200px;">
@@ -467,7 +475,7 @@ async function showUserDetail(userId) {
     <h3>订单记录 (${u.orders?.length || 0})</h3>
     ${ordersHtml}
     <div class="actions" style="margin-top:16px;">
-      <button class="btn btn-primary" onclick="closeUserDetail();openEditModal('${u.id}','${u.display_name || ''}','${u.subscription?.plan_type || 'free'}')">编辑订阅</button>
+      <button class="btn btn-primary" onclick="closeUserDetail();openEditModal('${u.user_id}','${u.login_name || u.display_name || ''}','${u.subscription?.plan_type || 'free'}')">编辑订阅</button>
     </div>
   `;
 }
