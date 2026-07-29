@@ -77,10 +77,12 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const freeCount = subs.filter((s: any) => s.plan_type === 'free').length;
 
     // 订单统计
-    const orders = await queryAll('SELECT amount, status FROM subscription_orders');
+    const orders = await queryAll('SELECT amount, status, created_at FROM subscription_orders');
     const totalRevenue = orders.reduce((sum: number, o: any) => sum + (o.status === 'paid' ? parseFloat(o.amount) : 0), 0);
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     const thisMonthRevenue = orders
-      .filter((o: any) => o.status === 'paid')
+      .filter((o: any) => o.status === 'paid' && o.created_at >= firstDayOfMonth)
       .reduce((sum: number, o: any) => sum + parseFloat(o.amount), 0);
 
     const totalOrders = orders.length;

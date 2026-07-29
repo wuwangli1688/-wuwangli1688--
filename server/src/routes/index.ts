@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { getSupabaseClient } from "../storage/database/supabase-client.js";
+import { execute } from "../storage/database/direct-connection.js";
 import { authMiddleware } from "../middleware/auth.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import shareRouter from "./share.js";
@@ -680,6 +681,18 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
       .single();
 
     if (error) throw new Error(`创建失败: ${error.message}`);
+
+    // 记录活动日志（异步，不影响主流程）
+    try {
+      await execute(
+        `INSERT INTO activity_logs (user_id, action, metadata) VALUES ($1, $2, $3)`,
+        [userId, 'create_transaction', JSON.stringify({ amount, type, category_id, date })]
+      );
+    } catch (e) {
+      // 活动日志记录失败不影响主流程
+      console.error('Failed to log activity:', e);
+    }
+
     res.status(201).json({ data, message: status === 'pending' ? '已提交，等待主账号审核' : '创建成功' });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
