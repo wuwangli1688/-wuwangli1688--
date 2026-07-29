@@ -257,6 +257,7 @@ async function loadDashboard() {
     <div class="stat-card"><div class="num">${data.totalUsers}</div><div class="lbl">总用户</div></div>
     <div class="stat-card"><div class="num">${data.parentUsers}</div><div class="lbl">主账号</div></div>
     <div class="stat-card"><div class="num">${data.childUsers}</div><div class="lbl">子账号</div></div>
+    <div class="stat-card"><div class="num" style="color:#5856d6;">${data.totalActive}</div><div class="lbl">历史活跃用户</div></div>
     <div class="stat-card"><div class="num" style="color:#007aff;">${data.proCount}</div><div class="lbl">专业版</div></div>
     <div class="stat-card"><div class="num" style="color:#86868b;">${data.freeCount}</div><div class="lbl">免费版</div></div>
     <div class="stat-card"><div class="num" style="color:#34c759;">¥${data.thisMonthRevenue}</div><div class="lbl">本月收入</div></div>
@@ -395,7 +396,7 @@ async function showUserDetail(userId) {
     <div class="row"><div class="lbl">登录账号</div><div class="val"><strong>${u.login_name}</strong></div></div>
     <div class="row"><div class="lbl">显示名</div><div class="val">${displayName} <span style="font-size:11px;color:#007aff;cursor:pointer;" onclick="showNameHistory('${u.id}','${displayName.replace(/'/g,"\\'")}')">📝 修改</span></div></div>
     <div class="row"><div class="lbl">注册端</div><div class="val"><span class="tag ${isWechat ? 'tag-green' : 'tag-blue'}">${registerSource}</span></div></div>
-    <div class="row"><div class="lbl">活跃指数</div><div class="val"><div class="activity-bar" style="width:${Math.min(activityIndex*6,60)}px;background:${barColor};"></div> ${activityIndex} 次(30天)</div></div>
+    <div class="row"><div class="lbl">活跃指数</div><div class="val"><div class="activity-bar" style="width:${Math.min(activityIndex*6,60)}px;background:${barColor};"></div> ${activityIndex} 次(总计)</div></div>
     <div class="row"><div class="lbl">标签</div><div class="val">${getTagHtml(u.tags)} <span style="font-size:11px;color:#007aff;cursor:pointer;" onclick="showTagsModal('${u.id}','${displayName.replace(/'/g,"\\'")}')">✏️ 管理</span></div></div>
     <div class="row"><div class="lbl">订阅</div><div class="val">${u.subscription_plan === 'pro' ? '<span class="tag tag-blue">专业版</span>' : '<span class="tag tag-gray">免费版</span>'}</div></div>
     <div class="row"><div class="lbl">交易数</div><div class="val">${u.txCount || 0} 笔</div></div>

@@ -50,6 +50,11 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     // 子账号数
     const childUsers = await queryCount("SELECT count(*) FROM user_profiles WHERE role = 'child'");
 
+    // 总活跃用户（历史有交易记录的用户数）
+    const totalActive = await queryCount(
+      'SELECT count(DISTINCT user_id) FROM transactions'
+    );
+
     // 今日活跃用户
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -88,6 +93,7 @@ router.get('/dashboard', async (req: Request, res: Response) => {
       totalUsers,
       parentUsers,
       childUsers,
+      totalActive,
       todayActive,
       weekActive,
       proCount,
@@ -145,15 +151,13 @@ router.get('/users', async (req: Request, res: Response) => {
     // 获取每个用户的订阅、交易数、子账号数、门店数、活跃指数、标签、最近活跃时间
     const userIds = users.map((u: any) => u.id);
     const enrichedUsers = await Promise.all(userIds.map(async (uid: string) => {
-      const [subRows, txCount, subAccountCount, storeCount, weekTxCount, activityCount, tags, lastActive] = await Promise.all([
+      const [subRows, txCount, subAccountCount, storeCount, tags, lastTxDate] = await Promise.all([
         queryOne('SELECT plan_type, status, expires_at, sub_account_limit, store_limit FROM subscriptions WHERE user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM transactions WHERE user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM user_profiles WHERE parent_user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM stores WHERE owner_id = $1', [uid]),
-        queryCount('SELECT count(*) FROM transactions WHERE user_id = $1 AND created_at >= $2', [uid, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()]),
-        queryCount('SELECT count(*) FROM activity_logs WHERE user_id = $1 AND created_at >= $2', [uid, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()]),
         queryAll('SELECT tag FROM user_tags WHERE user_id = $1', [uid]),
-        queryOne('SELECT MAX(created_at) as last_active FROM activity_logs WHERE user_id = $1', [uid]),
+        queryOne('SELECT MAX(created_at) as last_active FROM transactions WHERE user_id = $1', [uid]),
       ]);
 
       const user = users.find((u: any) => u.id === uid);
@@ -163,12 +167,11 @@ router.get('/users', async (req: Request, res: Response) => {
         login_name: decodeDisplayName(user.login_name),
         subscription: subRows || { plan_type: 'free', status: 'active' },
         txCount,
-        weekTxCount,
         subAccountCount,
         storeCount,
-        activity_index: parseInt(activityCount) + parseInt(weekTxCount),
+        activity_index: txCount,
         tags: (tags || []).map((t: any) => t.tag).join(','),
-        last_active: lastActive?.last_active || null,
+        last_active: lastTxDate?.last_active || null,
         register_source: getRegisterSource(user.account_email, user.register_source),
       };
     }));
@@ -631,7 +634,7 @@ router.delete('/users/:id/tags/:tag', async (req, res) => {
 
 /**
  * GET /api/v1/admin/users/:id/activity
- * Get activity logs for a user
+ * Get activity logs + transaction history for a user
  */
 router.get('/users/:id/activity', async (req, res) => {
   try {
@@ -639,6 +642,7 @@ router.get('/users/:id/activity', async (req, res) => {
     const { page = '1', limit = '20' } = req.query;
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
     
+    // Get activity logs
     const totalResult = await queryOne('SELECT count(*) as count FROM activity_logs WHERE user_id = $1', [id]);
     const total = parseInt(totalResult?.count || '0');
     
@@ -647,20 +651,36 @@ router.get('/users/:id/activity', async (req, res) => {
       [id, parseInt(limit as string), offset]
     );
     
-    // Also get activity summary
-    const summary = await queryAll(
-      `SELECT 
-        activity_type,
-        count(*) as count,
-        max(created_at) as last_active
-      FROM activity_logs 
-      WHERE user_id = $1 
-      GROUP BY activity_type 
-      ORDER BY count DESC`,
+    // Also get transaction history as activity records
+    const txActivity = await queryAll(
+      'SELECT id, created_at, type, amount, note, category_id FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20',
       [id]
     );
+    const txTotal = await queryOne('SELECT count(*) as count FROM transactions WHERE user_id = $1', [id]);
     
-    res.json({ logs, total, summary });
+    // Combine into activity records
+    const activities = logs.map((l: any) => ({
+      created_at: l.created_at,
+      action: l.activity_type + (l.description ? ': ' + l.description : ''),
+      type: 'log'
+    }));
+    
+    const txActivities = txActivity.map((t: any) => ({
+      created_at: t.created_at,
+      action: (t.type === 'income' ? '收入' : '支出') + ' ' + t.amount + '元' + (t.note ? ' (' + t.note + ')' : ''),
+      type: 'transaction'
+    }));
+    
+    // Merge and sort by created_at desc
+    const allActivities = [...activities, ...txActivities].sort((a: any, b: any) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    
+    res.json({ 
+      activities: allActivities, 
+      total: total + parseInt(txTotal?.count || '0'),
+      summary: { activity_logs: total, transactions: parseInt(txTotal?.count || '0') }
+    });
   } catch (error) {
     console.error('获取活动记录失败:', error);
     res.status(500).json({ error: '获取活动记录失败' });
@@ -718,10 +738,6 @@ router.get('/users/:id', async (req: Request, res: Response) => {
 
     // 获取交易统计
     const txCount = await queryCount('SELECT count(*) FROM transactions WHERE user_id = $1', [id]);
-    const weekTxCount = await queryCount(
-      'SELECT count(*) FROM transactions WHERE user_id = $1 AND created_at >= $2',
-      [id, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()]
-    );
 
     // 获取门店数
     const storeCount = await queryCount('SELECT count(*) FROM stores WHERE owner_id = $1', [id]);
@@ -743,13 +759,9 @@ router.get('/users/:id', async (req: Request, res: Response) => {
     );
 
     // 获取活跃指数、标签、最近活跃时间
-    const activityCount = await queryCount(
-      'SELECT count(*) FROM activity_logs WHERE user_id = $1 AND created_at >= $2',
-      [id, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()]
-    );
     const tags = await queryAll('SELECT tag FROM user_tags WHERE user_id = $1', [id]);
     const lastActive = await queryOne(
-      'SELECT MAX(created_at) as last_active FROM activity_logs WHERE user_id = $1',
+      'SELECT MAX(created_at) as last_active FROM transactions WHERE user_id = $1',
       [id]
     );
     const subAccountCount = await queryCount('SELECT count(*) FROM user_profiles WHERE parent_user_id = $1', [id]);
@@ -761,7 +773,6 @@ router.get('/users/:id', async (req: Request, res: Response) => {
       register_source: getRegisterSource(user.account_email, user.register_source),
       subscription: subscription || null,
       txCount,
-      weekTxCount,
       storeCount,
       children: (children || []).map((c: any) => ({
         ...c,
@@ -771,7 +782,7 @@ router.get('/users/:id', async (req: Request, res: Response) => {
       })),
       subAccountCount,
       orders,
-      activity_index: parseInt(activityCount) + parseInt(weekTxCount),
+      activity_index: txCount,
       tags: (tags || []).map((t: any) => t.tag).join(','),
       last_active: lastActive?.last_active || null,
     };
