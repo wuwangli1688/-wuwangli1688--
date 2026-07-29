@@ -84,7 +84,7 @@ tr:hover td { background: #f8f8fa; }
 <div class="header">
   <h1>📊 即时记账 · 开发者后台</h1>
   <div>
-    <span class="user" id="userInfo">管理员</span>
+    <span class="user" id="userInfo">加载中...</span>
     <span class="logout" onclick="logout()">退出登录</span>
   </div>
 </div>
@@ -323,7 +323,7 @@ function renderTable(users, total, page, totalPages) {
   }
   
   let html = `<table><thead><tr>
-    <th>用户</th><th>显示名</th><th>注册端</th><th>活跃指数</th><th>标签</th><th>子账号</th><th>订阅</th><th>最近活跃</th><th>注册时间</th><th>操作</th>
+    <th>用户</th><th>显示名</th><th>注册端</th><th>店铺</th><th>活跃指数</th><th>标签</th><th>子账号</th><th>订阅</th><th>最近活跃</th><th>注册时间</th><th>操作</th>
   </tr></thead><tbody>`;
   
   for (const u of sorted) {
@@ -346,6 +346,7 @@ function renderTable(users, total, page, totalPages) {
         <span style="font-size:11px;color:#86868b;cursor:pointer;margin-left:6px;" onclick="showNameHistory('${u.id}','${displayName.replace(/'/g,"\\'")}')">📝</span>
       </td>
       <td><span class="tag ${isWechat ? 'tag-green' : 'tag-blue'}">${registerSource}</span></td>
+      <td style="font-size:12px;">${u.storeNames ? u.storeNames : '<span style="color:#86868b;">—</span>'}</td>
       <td>
         <div class="activity-bar" style="width:${barWidth}px;background:${barColor};"></div>
         <span style="font-size:12px;color:${activityIndex === 0 ? '#86868b' : '#1d1d1f'}">${activityIndex}</span>
@@ -367,6 +368,7 @@ function renderTable(users, total, page, totalPages) {
           <td style="padding-left:28px;">📎 ${cName}</td>
           <td>${c.login_name || ''}</td>
           <td><span class="tag ${cRegSource === '微信小程序' ? 'tag-green' : 'tag-blue'}">${cRegSource}</span></td>
+          <td><span style="color:#86868b;">—</span></td>
           <td colspan="7" style="font-size:12px;color:#86868b;">子账号</td>
         </tr>`;
       }
@@ -420,6 +422,7 @@ async function showUserDetail(userId) {
     <div class="row"><div class="lbl">标签</div><div class="val">${getTagHtml(u.tags)} <span style="font-size:11px;color:#007aff;cursor:pointer;" onclick="showTagsModal('${u.id}','${displayName.replace(/'/g,"\\'")}')">✏️ 管理</span></div></div>
     <div class="row"><div class="lbl">订阅</div><div class="val">${u.subscription_plan === 'pro' ? '<span class="tag tag-blue">专业版</span>' : '<span class="tag tag-gray">免费版</span>'}</div></div>
     <div class="row"><div class="lbl">交易数</div><div class="val">${u.txCount || 0} 笔</div></div>
+    <div class="row"><div class="lbl">店铺</div><div class="val">${u.storeNames ? '<span style="color:#34c759;">🏪 ' + u.storeNames + '</span>' : '<span style="color:#86868b;">—</span>'}</div></div>
     <div class="row"><div class="lbl">子账号</div><div class="val">${u.subAccountCount || 0} 个</div></div>
     <div class="row"><div class="lbl">最近活跃</div><div class="val" style="color:#86868b;">${u.last_active || '—'}</div></div>
     <div class="row"><div class="lbl">注册时间</div><div class="val" style="color:#86868b;">${u.created_at || '—'}</div></div>
@@ -688,6 +691,9 @@ async function syncAllData() {
 // 初始化
 async function init() {
   if (!token) { window.location.href = '/admin/login.html'; return; }
+  // 显示登录账号
+  const adminUser = localStorage.getItem('admin_username') || '管理员';
+  document.getElementById('userInfo').textContent = '👤 ' + adminUser;
   await loadDashboard();
   await loadUsers();
 }

@@ -153,11 +153,13 @@ router.get('/users', async (req: Request, res: Response) => {
     // 获取每个用户的订阅、交易数、子账号数、门店数、活跃指数、标签、最近活跃时间
     const userIds = users.map((u: any) => u.id);
     const enrichedUsers = await Promise.all(userIds.map(async (uid: string) => {
-      const [subRows, txCount, subAccountCount, storeCount, tags, lastTxDate] = await Promise.all([
+      const [subRows, txCount, subAccountCount, storeCount,
+      storeNames, tags, lastTxDate] = await Promise.all([
         queryOne('SELECT plan_type, status, expires_at, sub_account_limit, store_limit FROM subscriptions WHERE user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM transactions WHERE user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM user_profiles WHERE parent_user_id = $1', [uid]),
         queryCount('SELECT count(*) FROM stores WHERE owner_id = $1', [uid]),
+        queryAll('SELECT name FROM stores WHERE owner_id = $1', [uid]),
         queryAll('SELECT tag FROM user_tags WHERE user_id = $1', [uid]),
         queryOne('SELECT MAX(created_at) as last_active FROM transactions WHERE user_id = $1', [uid]),
       ]);
@@ -171,6 +173,7 @@ router.get('/users', async (req: Request, res: Response) => {
         txCount,
         subAccountCount,
         storeCount,
+        storeNames: (storeNames || []).map((s: any) => s.name).join(', '),
         activity_index: txCount,
         tags: (tags || []).map((t: any) => t.tag).join(','),
         last_active: lastTxDate?.last_active || null,
@@ -741,8 +744,9 @@ router.get('/users/:id', async (req: Request, res: Response) => {
     // 获取交易统计
     const txCount = await queryCount('SELECT count(*) FROM transactions WHERE user_id = $1', [id]);
 
-    // 获取门店数
+    // 获取门店数据
     const storeCount = await queryCount('SELECT count(*) FROM stores WHERE owner_id = $1', [id]);
+    const storeNames = (await queryAll('SELECT name FROM stores WHERE owner_id = $1', [id])).map((s: any) => s.name).join(', ');
 
     // 获取子账号
     const children = await queryAll(
