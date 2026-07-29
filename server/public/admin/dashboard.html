@@ -249,6 +249,7 @@ async function loadDashboard() {
     <div class="stat-box"><div class="label">专业版</div><div class="num">${data.proCount}</div></div>
     <div class="stat-box"><div class="label">免费版</div><div class="num">${data.freeCount}</div></div>
     <div class="stat-box"><div class="label">本月收入</div><div class="num">¥${data.thisMonthRevenue || 0}</div></div>
+    <div class="stat-box" style="cursor:pointer;" onclick="switchTab('feedbacks')"><div class="label">用户反馈</div><div class="num">${data.feedbackCount || 0}</div></div>
   `;
   document.getElementById('statsRow').innerHTML = html;
 }

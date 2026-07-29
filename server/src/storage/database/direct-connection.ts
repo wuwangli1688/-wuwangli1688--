@@ -107,6 +107,17 @@ export async function createTables(): Promise<void> {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       )
     `);
+
+    // Feedback table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS feedback (
+        id SERIAL PRIMARY KEY,
+        user_id UUID,
+        content TEXT NOT NULL,
+        contact VARCHAR(255) DEFAULT '',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `);
     
     // Add indexes
     await client.query('CREATE INDEX IF NOT EXISTS idx_display_name_history_user ON display_name_history(user_id)');

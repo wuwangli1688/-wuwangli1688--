@@ -3,6 +3,7 @@ import type { Response } from "express";
 import QRCode from "qrcode";
 import { authMiddleware, type AuthenticatedRequest } from "../middleware/auth.js";
 import { getSupabaseClient } from "../storage/database/supabase-client.js";
+import { execute } from "../storage/database/direct-connection.js";
 
 const router = Router();
 
@@ -138,13 +139,10 @@ router.post("/feedback", authMiddleware, async (req: AuthenticatedRequest, res: 
       return;
     }
 
-    const { error } = await getSupabaseClient().from("user_feedback").insert({
-      user_id: userId,
-      content: content.trim(),
-      contact: contact?.trim() || "",
-    });
-
-    if (error) throw error;
+    await execute(
+      "INSERT INTO feedback (user_id, content, contact) VALUES ($1, $2, $3)",
+      [userId, content.trim(), contact?.trim() || ""]
+    );
 
     res.json({ data: { success: true } });
   } catch (err) {

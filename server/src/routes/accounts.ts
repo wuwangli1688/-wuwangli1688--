@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { authMiddleware, requireParent } from '../middleware/auth.js';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 import { getSupabaseClient } from '../storage/database/supabase-client.js';
+import { execute } from '../storage/database/direct-connection.js';
 import { categories, transactions, userProfiles } from '../storage/database/shared/schema.js';
 import { eq, and, desc, gte, lte, inArray, isNull, or, sql } from 'drizzle-orm';
 
@@ -887,14 +888,10 @@ router.post('/feedback', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ error: '反馈内容不能为空' });
     }
 
-    const serviceClient = getSupabaseClient();
-    const { error } = await serviceClient.from('feedback').insert({
-      user_id: userId,
-      content: content.trim(),
-      contact: contact || '',
-    });
-
-    if (error) throw error;
+    await execute(
+      'INSERT INTO feedback (user_id, content, contact) VALUES ($1, $2, $3)',
+      [userId, content.trim(), contact?.trim() || '']
+    );
 
     return res.json({ message: '反馈提交成功，感谢您的建议！' });
   } catch (error) {
