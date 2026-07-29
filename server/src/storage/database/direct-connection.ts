@@ -134,19 +134,58 @@ export async function createTables(): Promise<void> {
 }
 
 /**
+ * Decode a potentially encoded display name
+ * Supports URL-encoded (%xx) and base64 encoded strings
+ */
+function decodeDisplayName(raw: string): string {
+  try {
+    // Try URL decode first
+    if (raw.includes('%')) {
+      const decoded = decodeURIComponent(raw);
+      if (decoded !== raw) return decoded;
+    }
+    // Try base64 decode (only if it looks like base64: alphanumeric + =)
+    if (/^[A-Za-z0-9+/=]+$/.test(raw) && raw.length > 6) {
+      const decoded = Buffer.from(raw, 'base64').toString('utf-8');
+      // Only use if it looks like valid text (contains Chinese or readable chars)
+      if (/[\u4e00-\u9fff]/.test(decoded) || /^[a-zA-Z0-9@.]+$/.test(decoded)) {
+        return decoded;
+      }
+    }
+  } catch {
+    // If decoding fails, return original
+  }
+  return raw;
+}
+
+/**
  * Sync all auth.users to user_profiles - create entries for users without profiles
  */
 export async function syncUsers(): Promise<void> {
   const client = await getPool().connect();
   try {
-    const result = await client.query(`
-      INSERT INTO user_profiles (id, display_name, role, platform)
-      SELECT a.id, SPLIT_PART(a.email, '@', 1), 'parent', 'app'
+    // First, get users without profiles
+    const users = await client.query(`
+      SELECT a.id, SPLIT_PART(a.email, '@', 1) as raw_name
       FROM auth.users a
       LEFT JOIN user_profiles up ON a.id = up.id
       WHERE up.id IS NULL
     `);
-    console.log(`Synced ${result.rowCount} users to user_profiles`);
+    
+    if (users.rows.length === 0) {
+      console.log('Synced 0 users to user_profiles (all up to date)');
+      return;
+    }
+    
+    // Insert each user with decoded display name
+    for (const user of users.rows) {
+      const decodedName = decodeDisplayName(user.raw_name);
+      await client.query(
+        'INSERT INTO user_profiles (id, display_name, role, platform) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING',
+        [user.id, decodedName, 'parent', 'app']
+      );
+    }
+    console.log(`Synced ${users.rows.length} users to user_profiles`);
   } catch (error) {
     console.error('Error syncing users:', error);
   } finally {
@@ -154,4 +193,20 @@ export async function syncUsers(): Promise<void> {
   }
 }
 
-export { getPool };
+/**
+ * Get display name with decoding (for admin queries)
+ */
+export async function getDecodedDisplayName(userId: string): Promise<string> {
+  try {
+    const row = await queryOne('SELECT display_name FROM user_profiles WHERE id = $1', [userId]);
+    if (row?.display_name) return decodeDisplayName(row.display_name);
+    
+    const authRow = await queryOne("SELECT SPLIT_PART(email, '@', 1) as raw_name FROM auth.users WHERE id = $1", [userId]);
+    if (authRow?.raw_name) return decodeDisplayName(authRow.raw_name);
+  } catch {
+    // ignore
+  }
+  return '未设置';
+}
+
+export { getPool, decodeDisplayName };

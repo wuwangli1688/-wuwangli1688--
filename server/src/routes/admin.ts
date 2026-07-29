@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { adminAuthMiddleware, createAdminToken, verifyAdminCredentials } from '../middleware/admin-auth.js';
-import { queryAll, queryOne, queryCount, execute } from '../storage/database/direct-connection.js';
+import { queryAll, queryOne, queryCount, execute, decodeDisplayName } from '../storage/database/direct-connection.js';
 
 const router = Router();
 
@@ -147,6 +147,8 @@ router.get('/users', async (req: Request, res: Response) => {
       const user = users.find((u: any) => u.id === uid);
       return {
         ...user,
+        display_name: decodeDisplayName(user.display_name),
+        login_name: decodeDisplayName(user.login_name),
         subscription: subRows || { plan_type: 'free', status: 'active' },
         txCount,
         weekTxCount,
@@ -175,7 +177,12 @@ router.get('/users', async (req: Request, res: Response) => {
             'SELECT plan_type, status, expires_at FROM subscriptions WHERE user_id = $1',
             [child.id]
           );
-          return { ...child, subscription: childSub || { plan_type: 'free', status: 'active' } };
+          return {
+            ...child,
+            display_name: decodeDisplayName(child.display_name),
+            login_name: decodeDisplayName(child.login_name),
+            subscription: childSub || { plan_type: 'free', status: 'active' }
+          };
         }));
 
         return { ...u, children: childWithSubs };
@@ -733,11 +740,17 @@ router.get('/users/:id', async (req: Request, res: Response) => {
 
     const enrichedUser = {
       ...user,
+      display_name: decodeDisplayName(user.display_name),
+      login_name: decodeDisplayName(user.login_name),
       subscription: subscription || null,
       txCount,
       weekTxCount,
       storeCount,
-      children,
+      children: (children || []).map((c: any) => ({
+        ...c,
+        display_name: decodeDisplayName(c.display_name),
+        login_name: decodeDisplayName(c.login_name),
+      })),
       subAccountCount,
       orders,
       activity_index: parseInt(activityCount) + parseInt(weekTxCount),
