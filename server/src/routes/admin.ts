@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { adminAuthMiddleware, createAdminToken, verifyAdminCredentials } from '../middleware/admin-auth.js';
-import { queryAll, queryOne, queryCount, execute, decodeDisplayName } from '../storage/database/direct-connection.js';
+import { queryAll, queryOne, queryCount, execute, decodeDisplayName, syncAllData } from '../storage/database/direct-connection.js';
 
 const router = Router();
 
@@ -793,6 +793,17 @@ router.get('/users/:id', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('获取用户详情失败:', error);
     res.status(500).json({ error: '获取用户详情失败' });
+  }
+});
+
+// 全量同步端点 - 同步所有用户数据、活动日志和交易记录
+router.post('/sync-all', async (req: any, res: any) => {
+  try {
+    const result = await syncAllData();
+    res.json({ success: true, message: '全量数据同步完成', details: result });
+  } catch (err: any) {
+    console.error('[Admin] 全量同步失败:', err);
+    res.status(500).json({ error: '同步失败: ' + (err.message || String(err)) });
   }
 });
 

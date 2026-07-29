@@ -115,6 +115,7 @@ tr:hover td { background: #f8f8fa; }
         <option value="100">100条/页</option>
       </select>
       <button class="btn btn-primary" onclick="loadUsers()">🔄 刷新</button>
+      <button class="btn btn-success" onclick="syncAllData()" style="background:#10b981;color:white;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;">🔄 全量同步</button>
     </div>
     <div id="userTableWrap"><div class="empty">加载中...</div></div>
     <div class="pagination" id="userPagination"></div>
@@ -657,6 +658,31 @@ function getRegisterSource(email, dbSource) {
   const e = (email || '').toLowerCase();
   if (e.includes('@wechat.local')) return '微信小程序';
   return 'App';
+}
+
+// 全量同步
+async function syncAllData() {
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.textContent = '⏳ 同步中...';
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/v1/admin/sync-all', {
+      method: 'POST',
+      headers: { 'x-admin-token': token }
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('同步完成：' + (data.details?.activityLogsCreated || 0) + ' 条活动日志已同步', 'success');
+    } else {
+      showToast('同步失败：' + (data.error || '未知错误'), 'error');
+    }
+  } catch (err) {
+    showToast('同步请求失败：' + err.message, 'error');
+  }
+  btn.textContent = originalText;
+  btn.disabled = false;
+  loadUsers();
 }
 
 // 初始化

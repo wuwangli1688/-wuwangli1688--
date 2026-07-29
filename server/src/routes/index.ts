@@ -685,7 +685,7 @@ router.post("/transactions", async (req: AuthenticatedRequest, res: Response) =>
     // 记录活动日志（异步，不影响主流程）
     try {
       await execute(
-        `INSERT INTO activity_logs (user_id, action, metadata) VALUES ($1, $2, $3)`,
+        `INSERT INTO activity_logs (user_id, activity_type, description) VALUES ($1, $2, $3)`,
         [userId, 'create_transaction', JSON.stringify({ amount, type, category_id, date })]
       );
     } catch (e) {

@@ -189,32 +189,116 @@ export async function syncUsers(): Promise<void> {
   try {
     // First, get users without profiles
     const users = await client.query(`
-      SELECT a.id, SPLIT_PART(a.email, '@', 1) as raw_name
+      SELECT a.id, SPLIT_PART(a.email, '@', 1) as raw_name, a.email
       FROM auth.users a
       LEFT JOIN user_profiles up ON a.id = up.id
       WHERE up.id IS NULL
     `);
     
-    if (users.rows.length === 0) {
-      console.log('Synced 0 users to user_profiles (all up to date)');
-      return;
-    }
-    
     // Insert each user with decoded display name
+    let syncedCount = 0;
     for (const user of users.rows) {
       const decodedName = decodeDisplayName(user.raw_name);
-      const registerSource = user.raw_name.startsWith('wx_dev_') ? '微信小程序' : 'App';
+      let registerSource = 'App';
+      if (user.raw_name.startsWith('wx_dev_')) registerSource = '微信小程序';
+      else if (user.email && user.email.includes('@wechat.local')) registerSource = '微信小程序';
+      else if (user.email && user.email.includes('@jizhangapp.local')) {
+        // Check if it's a URL-encoded email (from App registration)
+        try {
+          const decoded = decodeURIComponent(user.raw_name);
+          if (decoded !== user.raw_name) registerSource = 'App';
+          else registerSource = 'Web';
+        } catch { registerSource = 'Web'; }
+      }
       await client.query(
-        "INSERT INTO user_profiles (id, display_name, role, register_source) VALUES ($1, $2, 'parent', $3) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO user_profiles (id, display_name, role, register_source, created_at) VALUES ($1, $2, 'parent', $3, NOW()) ON CONFLICT (id) DO NOTHING",
         [user.id, decodedName, registerSource]
       );
+      syncedCount++;
     }
-    console.log(`Synced ${users.rows.length} users to user_profiles`);
+    
+    // Also update existing profiles that might be missing register_source
+    const updated = await client.query(`
+      UPDATE user_profiles SET register_source = 'App' 
+      WHERE register_source IS NULL OR register_source = ''
+    `);
+    
+    console.log(`Synced ${syncedCount} users to user_profiles, updated ${updated.rowCount || 0} existing profiles`);
   } catch (error) {
     console.error('Error syncing users:', error);
   } finally {
     client.release();
   }
+}
+
+/**
+ * Sync all data: users, activity logs from transactions, and metadata
+ */
+export async function syncAllData(): Promise<{ usersSynced: number; activityLogsCreated: number }> {
+  const client = await getPool().connect();
+  let usersSynced = 0;
+  let activityLogsCreated = 0;
+  try {
+    // 1. Sync all users from auth.users to user_profiles
+    const users = await client.query(`
+      SELECT a.id, SPLIT_PART(a.email, '@', 1) as raw_name, a.email
+      FROM auth.users a
+      LEFT JOIN user_profiles up ON a.id = up.id
+      WHERE up.id IS NULL
+    `);
+    
+    for (const user of users.rows) {
+      const decodedName = decodeDisplayName(user.raw_name);
+      let registerSource = 'App';
+      if (user.raw_name.startsWith('wx_dev_')) registerSource = '微信小程序';
+      else if (user.email && user.email.includes('@wechat.local')) registerSource = '微信小程序';
+      else if (user.email && user.email.includes('@jizhangapp.local')) {
+        try {
+          const decoded = decodeURIComponent(user.raw_name);
+          if (decoded !== user.raw_name) registerSource = 'App';
+          else registerSource = 'Web';
+        } catch { registerSource = 'Web'; }
+      }
+      await client.query(
+        "INSERT INTO user_profiles (id, display_name, role, register_source, created_at) VALUES ($1, $2, 'parent', $3, NOW()) ON CONFLICT (id) DO NOTHING",
+        [user.id, decodedName, registerSource]
+      );
+      usersSynced++;
+    }
+    
+    // 2. Backfill activity_logs from transactions (for users who already have transactions)
+    const existingLogs = await client.query(`SELECT COUNT(*) as cnt FROM activity_logs`);
+    if (parseInt(existingLogs.rows[0].cnt) === 0) {
+      // Only backfill if activity_logs is empty
+      const txResult = await client.query(`
+        SELECT id, user_id, created_at, amount, type, category_id, date
+        FROM transactions
+        ORDER BY created_at ASC
+      `);
+      
+      for (const tx of txResult.rows) {
+        await client.query(
+          `INSERT INTO activity_logs (user_id, activity_type, description, created_at) 
+           VALUES ($1, 'create_transaction', $2, $3) ON CONFLICT DO NOTHING`,
+          [tx.user_id, JSON.stringify({ amount: tx.amount, type: tx.type, category_id: tx.category_id, date: tx.date }), tx.created_at]
+        );
+        activityLogsCreated++;
+      }
+    }
+    
+    // 3. Fix any NULL register_source in existing profiles
+    await client.query(`
+      UPDATE user_profiles SET register_source = 'App' 
+      WHERE register_source IS NULL OR register_source = ''
+    `);
+    
+    console.log(`syncAllData: ${usersSynced} users synced, ${activityLogsCreated} activity logs created`);
+  } catch (error) {
+    console.error('Error syncing all data:', error);
+  } finally {
+    client.release();
+  }
+  return { usersSynced, activityLogsCreated };
 }
 
 /**
