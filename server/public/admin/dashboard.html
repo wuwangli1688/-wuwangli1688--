@@ -73,10 +73,14 @@ tr:hover td { background: #f8f8fa; }
 .order-card .info .user { font-weight: 500; font-size: 14px; }
 .order-card .info .meta { font-size: 12px; color: #86868b; margin-top: 4px; }
 .order-card .actions { margin-left: 12px; }
+	.toast { position: fixed; top: 20px; right: 20px; background: #34c759; color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; z-index: 1000; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease; pointer-events: none; }
+	.toast.error { background: #ff3b30; }
+	.toast.show { opacity: 1; transform: translateY(0); }
 .activity-bar { display: inline-block; height: 6px; border-radius: 3px; min-width: 30px; margin-right: 6px; }
 </style>
 </head>
 <body>
+<div class="toast" id="toast"></div>
 <div class="header">
   <h1>📊 即时记账 · 开发者后台</h1>
   <div>
@@ -216,6 +220,20 @@ function getHeaders() {
   return { 'X-Admin-Token': token, 'Content-Type': 'application/json' };
 }
 
+function showToast(msg, type = 'success') {
+  const toast = document.getElementById('toast') || (() => {
+    const el = document.createElement('div');
+    el.id = 'toast';
+    el.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;padding:12px 20px;border-radius:8px;font-size:14px;color:#fff;transition:all 0.3s;max-width:350px;';
+    document.body.appendChild(el);
+    return el;
+  })();
+  toast.style.background = type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6';
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+}
+
 async function apiFetch(url, opts = {}) {
   try {
     const headers = { ...getHeaders(), ...opts.headers };
@@ -268,6 +286,7 @@ async function loadDashboard() {
 
 // ==================== 用户管理 ====================
 async function loadUsers() {
+  showToast('正在刷新用户数据...', 'info');
   userPage = 1;
   await fetchUsers();
 }
@@ -518,6 +537,7 @@ async function removeTag(userId, tag) {
 
 // ==================== 反馈管理 ====================
 async function loadFeedbacks() {
+  showToast('正在刷新反馈数据...', 'info');
   fbPage = 1;
   await fetchFeedbacks();
 }
@@ -547,6 +567,7 @@ async function fetchFeedbacks() {
 
 // ==================== 订单管理 ====================
 async function loadOrders() {
+  showToast('正在刷新订单数据...', 'info');
   orderPage = 1;
   await fetchOrders();
 }
