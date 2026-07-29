@@ -119,6 +119,29 @@ export async function createTables(): Promise<void> {
       )
     `);
     
+    // Add register_source column to user_profiles (if not exists)
+    await client.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'user_profiles' AND column_name = 'register_source'
+        ) THEN
+          ALTER TABLE user_profiles ADD COLUMN register_source VARCHAR(50) DEFAULT 'App';
+        END IF;
+      END $$;
+    `);
+    
+    // Update register_source for existing WeChat Mini Program users
+    await client.query(`
+      UPDATE user_profiles 
+      SET register_source = '微信小程序' 
+      WHERE register_source IS NULL 
+        AND id IN (
+          SELECT a.id FROM auth.users a 
+          WHERE a.email LIKE '%@wechat.local'
+        )
+    `);
+    
     // Add indexes
     await client.query('CREATE INDEX IF NOT EXISTS idx_display_name_history_user ON display_name_history(user_id)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_user_tags_user ON user_tags(user_id)');
@@ -180,9 +203,10 @@ export async function syncUsers(): Promise<void> {
     // Insert each user with decoded display name
     for (const user of users.rows) {
       const decodedName = decodeDisplayName(user.raw_name);
+      const registerSource = user.raw_name.startsWith('wx_dev_') ? '微信小程序' : 'App';
       await client.query(
-        'INSERT INTO user_profiles (id, display_name, role, platform) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING',
-        [user.id, decodedName, 'parent', 'app']
+        "INSERT INTO user_profiles (id, display_name, role, register_source) VALUES ($1, $2, 'parent', $3) ON CONFLICT (id) DO NOTHING",
+        [user.id, decodedName, registerSource]
       );
     }
     console.log(`Synced ${users.rows.length} users to user_profiles`);

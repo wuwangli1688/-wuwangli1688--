@@ -6,11 +6,13 @@ import { queryAll, queryOne, queryCount, execute, decodeDisplayName } from '../s
 const router = Router();
 
 /** 根据邮箱域名判断注册来源 */
-function getRegisterSource(email: string): string {
+function getRegisterSource(email: string, dbSource?: string | null): string {
+  // 微信小程序用户优先从 email 判断（不受数据库默认值影响）
+  if (email && email.includes('@wechat.local')) return '微信小程序';
+  // 再使用数据库存储的注册来源
+  if (dbSource) return dbSource;
+  // 最后 fallback
   if (!email) return 'App';
-  if (email.includes('@wechat.local')) return '微信小程序';
-  if (email.includes('@jizhangapp.local')) return 'App';
-  if (email.includes('@jizhang.local')) return 'App';
   return 'App';
 }
 
@@ -119,7 +121,8 @@ router.get('/users', async (req: Request, res: Response) => {
                COALESCE(u.created_at, a.created_at) AS created_at,
                SPLIT_PART(a.email, '@', 1) AS login_name,
                a.email AS account_email,
-               COALESCE(u.platform, 'app') AS platform
+               COALESCE(u.platform, 'app') AS platform,
+               u.register_source
                FROM auth.users a
                LEFT JOIN user_profiles u ON a.id = u.id`;
     const params: any[] = [];
@@ -166,7 +169,7 @@ router.get('/users', async (req: Request, res: Response) => {
         activity_index: parseInt(activityCount) + parseInt(weekTxCount),
         tags: (tags || []).map((t: any) => t.tag).join(','),
         last_active: lastActive?.last_active || null,
-        register_source: getRegisterSource(user.account_email),
+        register_source: getRegisterSource(user.account_email, user.register_source),
       };
     }));
 
@@ -174,7 +177,7 @@ router.get('/users', async (req: Request, res: Response) => {
     const finalUsers = await Promise.all(enrichedUsers.map(async (u: any) => {
       if (u.role === 'parent') {
         const childProfiles = await queryAll(
-          `SELECT u.id, u.display_name, u.created_at,
+          `SELECT u.id, u.display_name, u.created_at, u.register_source,
                   COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name,
                   a.email AS account_email
            FROM user_profiles u
@@ -192,7 +195,7 @@ router.get('/users', async (req: Request, res: Response) => {
             ...child,
             display_name: decodeDisplayName(child.display_name),
             login_name: decodeDisplayName(child.login_name),
-            register_source: getRegisterSource(child.account_email || ''),
+            register_source: getRegisterSource(child.account_email || '', child.register_source),
             subscription: childSub || { plan_type: 'free', status: 'active' }
           };
         }));
@@ -694,6 +697,7 @@ router.get('/users/:id', async (req: Request, res: Response) => {
               u.parent_user_id,
               COALESCE(u.created_at, a.created_at) AS created_at,
               COALESCE(u.platform, 'app') AS platform,
+              u.register_source,
               SPLIT_PART(a.email, '@', 1) AS login_name, a.email AS account_email
        FROM auth.users a
        LEFT JOIN user_profiles u ON a.id = u.id
@@ -754,7 +758,7 @@ router.get('/users/:id', async (req: Request, res: Response) => {
       ...user,
       display_name: decodeDisplayName(user.display_name),
       login_name: decodeDisplayName(user.login_name),
-      register_source: getRegisterSource(user.account_email),
+      register_source: getRegisterSource(user.account_email, user.register_source),
       subscription: subscription || null,
       txCount,
       weekTxCount,
@@ -763,7 +767,7 @@ router.get('/users/:id', async (req: Request, res: Response) => {
         ...c,
         display_name: decodeDisplayName(c.display_name),
         login_name: decodeDisplayName(c.login_name),
-        register_source: getRegisterSource(c.account_email || c.login_name || ''),
+        register_source: getRegisterSource(c.account_email || c.login_name || '', c.register_source),
       })),
       subAccountCount,
       orders,

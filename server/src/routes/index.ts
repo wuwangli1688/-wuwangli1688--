@@ -16,7 +16,7 @@ import accountsRouter from "./accounts.js";
 
 router.post("/accounts/register", async (req: Request, res: Response) => {
   try {
-    const { account, password } = req.body;
+    const { account, password, source } = req.body;
     if (!account || !password) {
       return res.status(400).json({ error: '请提供账号和密码' });
     }
@@ -55,11 +55,13 @@ router.post("/accounts/register", async (req: Request, res: Response) => {
     const newUserId = data.user.id;
 
     // Create user profile as parent
+    const registerSource = source === 'Web' ? 'Web' : 'App';
     await serviceClient.from('user_profiles').insert({
       id: newUserId,
       role: 'parent',
       parent_user_id: null,
       display_name: account,
+      register_source: registerSource,
     });
 
     // Sign in immediately to get session

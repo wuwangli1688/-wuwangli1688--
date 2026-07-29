@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 import { getSupabase } from '@/lib/supabase';
 
 const BACKEND_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_BASE_URL;
@@ -201,11 +202,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (account: string, password: string) => {
     const supabase = await getSupabase();
 
+    // Detect registration source: 'App' (iOS/Android) or 'Web'
+    const source = Platform.OS === 'web' ? 'Web' : 'App';
+
     // Call backend API to register (uses admin API, no email required)
     const res = await fetch(`${BACKEND_BASE_URL}/api/v1/accounts/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account, password }),
+      body: JSON.stringify({ account, password, source }),
     });
 
     const data = await res.json();
