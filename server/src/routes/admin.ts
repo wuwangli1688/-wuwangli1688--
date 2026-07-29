@@ -5,6 +5,15 @@ import { queryAll, queryOne, queryCount, execute, decodeDisplayName } from '../s
 
 const router = Router();
 
+/** 根据邮箱域名判断注册来源 */
+function getRegisterSource(email: string): string {
+  if (!email) return 'App';
+  if (email.includes('@wechat.local')) return '微信小程序';
+  if (email.includes('@jizhangapp.local')) return 'App';
+  if (email.includes('@jizhang.local')) return 'App';
+  return 'App';
+}
+
 /** 所有路由都需要管理员身份验证 */
 router.use(adminAuthMiddleware);
 
@@ -157,6 +166,7 @@ router.get('/users', async (req: Request, res: Response) => {
         activity_index: parseInt(activityCount) + parseInt(weekTxCount),
         tags: (tags || []).map((t: any) => t.tag).join(','),
         last_active: lastActive?.last_active || null,
+        register_source: getRegisterSource(user.account_email),
       };
     }));
 
@@ -165,7 +175,8 @@ router.get('/users', async (req: Request, res: Response) => {
       if (u.role === 'parent') {
         const childProfiles = await queryAll(
           `SELECT u.id, u.display_name, u.created_at,
-                  COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name
+                  COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name,
+                  a.email AS account_email
            FROM user_profiles u
            LEFT JOIN auth.users a ON u.id = a.id
            WHERE u.parent_user_id = $1`,
@@ -181,6 +192,7 @@ router.get('/users', async (req: Request, res: Response) => {
             ...child,
             display_name: decodeDisplayName(child.display_name),
             login_name: decodeDisplayName(child.login_name),
+            register_source: getRegisterSource(child.account_email || ''),
             subscription: childSub || { plan_type: 'free', status: 'active' }
           };
         }));
@@ -742,6 +754,7 @@ router.get('/users/:id', async (req: Request, res: Response) => {
       ...user,
       display_name: decodeDisplayName(user.display_name),
       login_name: decodeDisplayName(user.login_name),
+      register_source: getRegisterSource(user.account_email),
       subscription: subscription || null,
       txCount,
       weekTxCount,
@@ -750,6 +763,7 @@ router.get('/users/:id', async (req: Request, res: Response) => {
         ...c,
         display_name: decodeDisplayName(c.display_name),
         login_name: decodeDisplayName(c.login_name),
+        register_source: getRegisterSource(c.account_email || c.login_name || ''),
       })),
       subAccountCount,
       orders,
