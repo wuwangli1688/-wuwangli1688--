@@ -1,20 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * Entry point for the server.
- * This file is referenced by .coze's entrypoint = "server.js"
- * It redirects to the actual server code in server/dist/index.js
+ * Production entry point for the server.
+ * Used by the FaaS deployment system (entrypoint = "server.js").
+ * 
+ * Starts the Express server on the configured port.
+ * The health endpoint is served by the Express app itself.
  */
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-
-// Set the PORT environment variable to 5000 for deployment
-process.env.PORT = process.env.PORT || '5000';
-
-// Dynamic import of the server bundle
-const serverPath = new URL('./server/dist/index.js', import.meta.url).pathname;
-import(serverPath).catch(err => {
-  console.error('Failed to start server:', err);
+// Load the built server bundle
+import('./server/dist/index.js').catch(err => {
+  console.error('[server.js] Failed to start server:', err);
   process.exit(1);
 });
