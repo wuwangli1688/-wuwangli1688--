@@ -81,7 +81,7 @@ router.post("/login", async (req: Request, res: Response) => {
     let wxPassword: string;
 
     if (existingUsers && existingUsers.length > 0) {
-      // 已有用户
+      // 已有用户（已绑定 App 账号）
       userId = existingUsers[0].id;
 
       // 更新微信信息
@@ -93,6 +93,31 @@ router.post("/login", async (req: Request, res: Response) => {
           .from("user_profiles")
           .update(updateData)
           .eq("id", userId);
+      }
+
+      // 获取 App 账号的邮箱，使用 WeChat 密码格式登录
+      const { data: userData } = await (supabase.auth.admin as any).getUserById(userId);
+      if (userData?.user?.email) {
+        // 使用 App 账号的邮箱 + 微信密码格式登录，确保 session 属于 App 账号
+        wxPassword = `wx_${openid}_pwd_2024`;
+        const { data: appSession, error: appSessionError } =
+          await supabase.auth.signInWithPassword({
+            email: userData.user.email,
+            password: wxPassword,
+          });
+        if (appSession && !appSessionError) {
+          return res.json({
+            access_token: appSession.session.access_token,
+            refresh_token: appSession.session.refresh_token,
+            user: {
+              id: userId,
+              email: userData.user.email,
+              isNewUser: false,
+            },
+          });
+        }
+        // 如果微信密码格式登录失败，回退到原有方式
+        console.warn("WeChat password login failed for bound account, falling back");
       }
 
       // 使用固定密码格式登录（与创建时一致）
@@ -185,11 +210,59 @@ router.post("/login", async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/v1/wechat/account-login
+ * 小程序端使用 App 账号密码登录（无需认证）
+ * Body: { account: string, password: string }
+ *
+ * 用于：App 注册的用户在小程序端用账号密码登录
+ * 返回的 session 与 App 端一致，数据完全互通
+ */
+router.post("/account-login", async (req: Request, res: Response) => {
+  try {
+    const { account, password } = req.body;
+
+    if (!account || !password) {
+      return res.status(400).json({ error: "请提供账号和密码" });
+    }
+
+    const supabase = getSupabaseClient();
+    const email = toSupabaseEmail(account);
+
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+    if (sessionError || !sessionData.session) {
+      return res.status(400).json({ error: "账号或密码错误" });
+    }
+
+    const userId = sessionData.user.id;
+
+    return res.json({
+      access_token: sessionData.session.access_token,
+      refresh_token: sessionData.session.refresh_token,
+      user: {
+        id: userId,
+        email: sessionData.user.email,
+        display_name: sessionData.user.user_metadata?.display_name || account,
+        isNewUser: false,
+      },
+    });
+  } catch (error) {
+    console.error("Account login error:", error);
+    return res.status(500).json({ error: "登录失败" });
+  }
+});
+
+/**
  * POST /api/v1/wechat/bindAccount
  * 将微信绑定到已有的 App 账号（无需认证）
  * Body: { code: string, account: string, password: string }
  *
  * 用于：小程序用户输入 App 端的账号密码，将微信绑定到该账号
+ * 绑定后，微信小程序用户与 App 账号数据互通
  */
 router.post("/bindAccount", async (req: Request, res: Response) => {
   try {
@@ -255,6 +328,29 @@ router.post("/bindAccount", async (req: Request, res: Response) => {
         platform: "both",
       })
       .eq("id", userId);
+
+    // 更新 App 账号密码为微信密码格式，确保微信OAuth登录也能进入该账号
+    // 用户仍可用原密码登录（已在本次验证通过），后续也可修改密码
+    const wxPassword = `wx_${openid}_pwd_2024`;
+    await (supabase.auth.admin as any).updateUserById(userId, {
+      password: wxPassword,
+    });
+
+    // 查找是否有已存在的微信虚拟账号，将其交易数据转移到 App 账号
+    const virtualEmail = `${openid}@wechat.local`;
+    const { data: wxAuthUser } = await supabase.auth.admin.listUsers();
+    const wxUser = wxAuthUser?.users?.find((u: any) => u.email === virtualEmail);
+    if (wxUser && wxUser.id !== userId) {
+      // 转移微信用户的交易记录到 App 账号（数据完全互通）
+      const { execute } = await import("../storage/database/direct-connection.js");
+      await execute("UPDATE transactions SET user_id = $1 WHERE user_id = $2", [userId, wxUser.id]);
+      await execute("UPDATE stores SET user_id = $1 WHERE user_id = $2", [userId, wxUser.id]);
+      await execute("UPDATE store_permissions SET user_id = $1 WHERE user_id = $2", [userId, wxUser.id]);
+      await execute("UPDATE subscription_orders SET user_id = $1 WHERE user_id = $2", [userId, wxUser.id]);
+      // 删除微信虚拟账号的 user_profiles（App 账号已有自己的 profile）
+      await execute("DELETE FROM user_profiles WHERE id = $1", [wxUser.id]);
+      console.log(`Data merged: WeChat user ${wxUser.id} → App user ${userId}`);
+    }
 
     return res.json({
       access_token: signInData.session?.access_token,

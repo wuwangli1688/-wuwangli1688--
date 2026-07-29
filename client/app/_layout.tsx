@@ -34,7 +34,8 @@ function AuthRedirect() {
     const inAuthGroup =
       currentPath === 'login' ||
       currentPath === 'register' ||
-      currentPath === 'forgot-password';
+      currentPath === 'forgot-password' ||
+      currentPath === 'wx-login';
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/login');
@@ -84,6 +85,7 @@ export default function RootLayout() {
           >
             <Stack.Screen name="login" options={{ title: "登录" }} />
             <Stack.Screen name="register" options={{ title: "注册" }} />
+            <Stack.Screen name="wx-login" options={{ title: "微信登录" }} />
             <Stack.Screen name="forgot-password" options={{ title: "找回密码" }} />
             <Stack.Screen name="account-manage" options={{ title: "子账号管理" }} />
             <Stack.Screen name="review" options={{ title: "审核记录" }} />

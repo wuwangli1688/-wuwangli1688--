@@ -88,6 +88,57 @@ router.post("/accounts/register", async (req: Request, res: Response) => {
   }
 });
 
+// ==================== WeChat Login (public, no auth) ====================
+// POST /api/v1/accounts/wx-login - Login with WeChat virtual account
+router.post("/wx-login", async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: '请提供完整的登录信息' });
+    }
+
+    if (!email.endsWith('@wechat.local')) {
+      return res.status(400).json({ error: '无效的微信账号' });
+    }
+
+    const supabase = getSupabaseClient();
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: password.trim(),
+    });
+
+    if (sessionError || !sessionData.session) {
+      return res.status(400).json({ error: '微信账号或密码错误' });
+    }
+
+    const userId = sessionData.session.user.id;
+
+    // 检查该微信账号是否已绑定到 App 账号
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('wx_openid, platform')
+      .eq('id', userId)
+      .limit(1);
+
+    const isBound = profile?.[0]?.platform === 'both' || !!profile?.[0]?.wx_openid;
+
+    return res.json({
+      access_token: sessionData.session.access_token,
+      refresh_token: sessionData.session.refresh_token,
+      user: {
+        id: userId,
+        email: sessionData.session.user.email,
+        isBound: isBound,
+      },
+    });
+  } catch (error) {
+    console.error('Wx login error:', error);
+    return res.status(500).json({ error: '登录失败，请稍后重试' });
+  }
+});
+
 // All business routes require authentication
 router.use(authMiddleware);
 

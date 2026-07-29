@@ -272,6 +272,20 @@ export default function LoginScreen() {
                   <Text className="text-[#2563EB] text-sm font-medium">立即注册</Text>
                 </TouchableOpacity>
               </View>
+
+              {Platform.OS === 'web' && (
+                <View className="mt-6 pt-6 border-t border-[#E5E7EB]">
+                  <Text className="text-[#9CA3AF] text-xs text-center mb-3">
+                    微信用户也可登录
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => router.push("/wx-login")}
+                    className="flex-row items-center justify-center py-3 rounded-xl border border-[#E5E7EB]"
+                  >
+                    <Text className="text-[#07C160] text-sm font-medium ml-2">微信账号登录</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </View>
           <IcpFooter />
