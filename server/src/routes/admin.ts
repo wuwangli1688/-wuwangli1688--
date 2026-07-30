@@ -751,7 +751,8 @@ router.get('/users/:id', async (req: Request, res: Response) => {
     // 获取子账号
     const children = await queryAll(
       `SELECT u.id, u.display_name, u.role, u.created_at,
-              COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name
+              COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name,
+              a.email AS account_email
        FROM user_profiles u
        LEFT JOIN auth.users a ON u.id = a.id
        WHERE u.parent_user_id = $1`,
@@ -780,6 +781,7 @@ router.get('/users/:id', async (req: Request, res: Response) => {
       subscription: subscription || null,
       txCount,
       storeCount,
+      storeNames,
       children: (children || []).map((c: any) => ({
         ...c,
         display_name: decodeDisplayName(c.display_name),
