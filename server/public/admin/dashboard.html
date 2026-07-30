@@ -323,12 +323,12 @@ function renderTable(users, total, page, totalPages) {
   }
   
   let html = `<table><thead><tr>
-    <th>用户</th><th>显示名</th><th>注册端</th><th>店铺</th><th>活跃指数</th><th>标签</th><th>子账号</th><th>订阅</th><th>最近活跃</th><th>注册时间</th><th>操作</th>
+    <th>登录账号</th><th>显示名</th><th>注册端</th><th>店铺</th><th>活跃指数</th><th>标签</th><th>子账号</th><th>订阅</th><th>最近活跃</th><th>注册时间</th><th>操作</th>
   </tr></thead><tbody>`;
   
   for (const u of sorted) {
     const children = u.children || [];
-    const displayName = u.display_name || u.login_name;
+    const displayName = u.display_name || u.account_email || u.login_name;
     const activityIndex = u.activity_index || 0;
     const tags = u.tags || '';
     const registerSource = u.register_source || 'App';
@@ -340,8 +340,9 @@ function renderTable(users, total, page, totalPages) {
     
     let rowspan = children.length > 0 ? children.length + 1 : 1;
     
+    const loginAccount = u.account_email || u.login_name || '';
     html += `<tr>
-      <td><strong>${u.login_name}</strong></td>
+      <td><strong style="font-size:13px;">${loginAccount}</strong></td>
       <td>${displayName}
         <span style="font-size:11px;color:#86868b;cursor:pointer;margin-left:6px;" onclick="showNameHistory('${u.id}','${displayName.replace(/'/g,"\\'")}')">📝</span>
       </td>
@@ -363,10 +364,11 @@ function renderTable(users, total, page, totalPages) {
     if (children.length > 0) {
       for (const c of children) {
         const cName = c.display_name || c.login_name || '未知';
+        const cAccount = c.account_email || c.login_name || '';
         const cRegSource = c.register_source || getRegisterSource(c.account_email || c.login_name || '');
         html += `<tr style="background:#fafafa;">
-          <td style="padding-left:28px;">📎 ${cName}</td>
-          <td>${c.login_name || ''}</td>
+          <td style="padding-left:28px;font-size:12px;">📎 ${cAccount}</td>
+          <td style="font-size:12px;">${cName}</td>
           <td><span class="tag ${cRegSource === '微信小程序' ? 'tag-green' : 'tag-blue'}">${cRegSource}</span></td>
           <td><span style="color:#86868b;">—</span></td>
           <td colspan="7" style="font-size:12px;color:#86868b;">子账号</td>
@@ -407,7 +409,7 @@ async function showUserDetail(userId) {
   const data = await apiFetch(API + '/users/' + userId);
   if (!data) return;
   const u = data;
-  const displayName = u.display_name || u.login_name;
+  const displayName = u.display_name || u.account_email || u.login_name;
   const children = u.children || [];
   const activityIndex = u.activity_index || 0;
   const registerSource = u.register_source || 'App';
@@ -415,7 +417,7 @@ async function showUserDetail(userId) {
   const barColor = activityIndex === 0 ? '#e5e5e7' : activityIndex < 5 ? '#ff9500' : '#34c759';
   
   let html = `
-    <div class="row"><div class="lbl">登录账号</div><div class="val"><strong>${u.login_name}</strong></div></div>
+    <div class="row"><div class="lbl">登录账号</div><div class="val"><strong>${u.account_email || u.login_name || ''}</strong></div></div>
     <div class="row"><div class="lbl">显示名</div><div class="val">${displayName} <span style="font-size:11px;color:#007aff;cursor:pointer;" onclick="showNameHistory('${u.id}','${displayName.replace(/'/g,"\\'")}')">📝 修改</span></div></div>
     <div class="row"><div class="lbl">注册端</div><div class="val"><span class="tag ${isWechat ? 'tag-green' : 'tag-blue'}">${registerSource}</span></div></div>
     <div class="row"><div class="lbl">活跃指数</div><div class="val"><div class="activity-bar" style="width:${Math.min(activityIndex*6,60)}px;background:${barColor};"></div> ${activityIndex} 次(总计)</div></div>
@@ -433,7 +435,7 @@ async function showUserDetail(userId) {
     for (const c of children) {
       const cName = c.display_name || c.login_name || '未知';
       const cReg = c.register_source || getRegisterSource(c.account_email || c.login_name || '');
-      html += `<div style="padding:4px 0;border-bottom:1px solid #f0f0f2;">📎 ${cName} <span style="font-size:11px;color:#86868b;">(${c.login_name || ''})</span> <span class="tag ${cReg === '微信小程序' ? 'tag-green' : 'tag-blue'}">${cReg}</span></div>`;
+      html += `<div style="padding:4px 0;border-bottom:1px solid #f0f0f2;">📎 ${cName} <span style="font-size:11px;color:#86868b;">(${c.account_email || c.login_name || ''})</span> <span class="tag ${cReg === '微信小程序' ? 'tag-green' : 'tag-blue'}">${cReg}</span></div>`;
     }
     html += `</div></div>`;
   }
