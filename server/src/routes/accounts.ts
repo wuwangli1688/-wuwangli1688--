@@ -288,11 +288,13 @@ router.put('/profile', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(500).json({ error: '更新失败: ' + authError.message });
     }
 
-    // Also update user_profiles table
-    await serviceClient.from('user_profiles').upsert({
-      id: userId,
-      display_name: displayName.trim(),
-    }, { onConflict: 'id' });
+    // Also update user_profiles table via direct pg connection
+    await execute(
+      `INSERT INTO user_profiles (id, display_name, register_source)
+       VALUES ($1, $2, 'App')
+       ON CONFLICT (id) DO UPDATE SET display_name = $2`,
+      [userId, displayName.trim()]
+    );
 
     return res.json({ message: '更新成功', displayName: displayName.trim() });
   } catch (error) {
