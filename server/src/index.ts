@@ -8,6 +8,7 @@ import adminRouter, { adminLoginRouter } from "./routes/admin.js";
 import supabaseConfigRouter from "./routes/supabase-config.js";
 import wechatRouter from "./routes/wechat.js";
 import { getSupabaseClient } from "./storage/database/supabase-client.js";
+import { dashboardHtml, loginHtml } from "./generated/admin-html.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +39,16 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.get('/api/v1/health', (req, res) => {
   console.log('Health check success');
   res.status(200).json({ status: 'ok' });
+});
+
+// Serve admin panel via API routes (bypasses nginx static file caching issues)
+app.get('/api/v1/admin/dashboard', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(dashboardHtml);
+});
+app.get('/api/v1/admin/login', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(loginHtml);
 });
 
 // Serve admin panel static files

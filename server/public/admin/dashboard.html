@@ -262,7 +262,7 @@ function switchTab(tab) {
   else if (tab === 'payment') loadPaymentConfig();
 }
 
-function logout() { localStorage.removeItem('admin_token'); window.location.href = '/admin/login.html'; }
+function logout() { localStorage.removeItem('admin_token'); window.location.href = '/api/v1/admin/login'; }
 
 function closeModal() { document.getElementById('userModal').classList.remove('show'); }
 function closeTagModal() { document.getElementById('tagModal').classList.remove('show'); }
@@ -692,7 +692,7 @@ async function syncAllData() {
 
 // 初始化
 async function init() {
-  if (!token) { window.location.href = '/admin/login.html'; return; }
+  if (!token) { window.location.href = '/api/v1/admin/login'; return; }
   // 显示登录账号
   const adminUser = localStorage.getItem('admin_username') || '管理员';
   document.getElementById('userInfo').textContent = '👤 ' + adminUser;

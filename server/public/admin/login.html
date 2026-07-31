@@ -83,7 +83,7 @@ async function handleLogin() {
     if (res.ok && data.token) {
       localStorage.setItem('admin_token', data.token);
       localStorage.setItem('admin_username', username);
-      window.location.href = 'dashboard.html';
+      window.location.href = '/api/v1/admin/dashboard';
     } else {
       showError(data.error || '登录失败，请检查账号密码');
     }
