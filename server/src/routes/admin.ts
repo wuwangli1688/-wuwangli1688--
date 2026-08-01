@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { adminAuthMiddleware, createAdminToken, verifyAdminCredentials } from '../middleware/admin-auth.js';
 import { queryAll, queryOne, queryCount, execute, decodeDisplayName, syncAllData } from '../storage/database/direct-connection.js';
+import { dashboardHtml, loginHtml } from '../generated/admin-html.js';
 
 const router = Router();
 
@@ -16,11 +17,21 @@ function getRegisterSource(email: string, dbSource?: string | null): string {
   return 'App';
 }
 
-/** 所有路由都需要管理员身份验证 */
-router.use(adminAuthMiddleware);
-
 /** ==================== 管理员登录（无需中间件，单独注册） ==================== */
 export const adminLoginRouter = Router();
+
+// 登录页与仪表盘 HTML 页面不需要鉴权，放在最前面避免被 adminAuthMiddleware 拦截
+adminLoginRouter.get('/login', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.send(loginHtml);
+});
+
+adminLoginRouter.get('/dashboard', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.send(dashboardHtml);
+});
 
 adminLoginRouter.post('/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
@@ -37,6 +48,9 @@ adminLoginRouter.post('/login', (req: Request, res: Response) => {
   const token = createAdminToken();
   res.json({ token, username: 'admin' });
 });
+
+/** 所有路由都需要管理员身份验证 */
+router.use(adminAuthMiddleware);
 
 /** ==================== 仪表盘 ==================== */
 router.get('/dashboard-data', async (req: Request, res: Response) => {

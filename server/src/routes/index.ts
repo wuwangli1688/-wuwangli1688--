@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { getSupabaseClient } from "../storage/database/supabase-client.js";
-import { execute } from "../storage/database/direct-connection.js";
+import { execute, queryAll } from "../storage/database/direct-connection.js";
 import { authMiddleware } from "../middleware/auth.js";
 import type { AuthenticatedRequest } from "../middleware/auth.js";
 import shareRouter from "./share.js";
@@ -307,27 +307,23 @@ router.delete("/categories/:id", async (req: AuthenticatedRequest, res: Response
 
 // Helper: get visible user IDs for current user
 // Parent sees own + all sub-accounts' transactions
-// Child sees own transactions + parent's approved transactions
-async function getVisibleUserIds(client: any, userId: string, role: string, parentUserId: string | null): Promise<string[]> {
+// Child sees own transactions + parent's/siblings' approved transactions
+async function getVisibleUserIds(_client: any, userId: string, role: string, parentUserId: string | null): Promise<string[]> {
   if (role === 'parent') {
-    // Get sub-account IDs
-    const { data: profiles } = await client
-      .from('user_profiles')
-      .select('id')
-      .eq('parent_user_id', userId)
-      .eq('role', 'child');
-    const subIds = (profiles || []).map((p: any) => p.id);
+    const profiles = await queryAll(
+      `SELECT id FROM user_profiles WHERE parent_user_id = $1 AND role = 'child'`,
+      [userId]
+    );
+    const subIds = (profiles as { id: string }[]).map((p) => p.id);
     return [userId, ...subIds];
   } else {
-    // Child account: see own transactions + parent's approved transactions
     if (parentUserId) {
-      const { data: siblingProfiles } = await client
-        .from('user_profiles')
-        .select('id')
-        .eq('parent_user_id', parentUserId)
-        .eq('role', 'child');
-      const siblingIds = (siblingProfiles || []).map((p: any) => p.id);
-      return [parentUserId, userId, ...siblingIds.filter((id: string) => id !== userId)];
+      const siblings = await queryAll(
+        `SELECT id FROM user_profiles WHERE parent_user_id = $1 AND role = 'child'`,
+        [parentUserId]
+      );
+      const siblingIds = (siblings as { id: string }[]).map((p) => p.id).filter((id) => id !== userId);
+      return [parentUserId, userId, ...siblingIds];
     }
     return [userId];
   }
@@ -335,19 +331,19 @@ async function getVisibleUserIds(client: any, userId: string, role: string, pare
 
 // Helper: get visible store IDs for current user
 // Parent sees all their stores; Child sees only permitted stores
-async function getVisibleStoreIds(client: any, userId: string, role: string): Promise<string[]> {
+async function getVisibleStoreIds(_client: any, userId: string, role: string): Promise<string[]> {
   if (role === 'parent') {
-    const { data } = await client
-      .from('stores')
-      .select('id')
-      .eq('owner_id', userId);
-    return (data || []).map((s: any) => s.id);
+    const rows = await queryAll(
+      `SELECT id FROM stores WHERE owner_id = $1`,
+      [userId]
+    );
+    return (rows as { id: string }[]).map((s) => s.id);
   } else {
-    const { data } = await client
-      .from('store_permissions')
-      .select('store_id')
-      .eq('user_id', userId);
-    return (data || []).map((p: any) => p.store_id);
+    const rows = await queryAll(
+      `SELECT store_id FROM store_permissions WHERE user_id = $1`,
+      [userId]
+    );
+    return (rows as { store_id: string }[]).map((p) => p.store_id);
   }
 }
 
@@ -362,88 +358,88 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
 
     const visibleIds = await getVisibleUserIds(client, userId, role, parentUserId ?? null);
 
-    // Pre-compute child visible store IDs (needed for sync filter application)
+    // Pre-compute child visible store IDs
     const visibleStoreIds = role === 'child' && !req.query.store_id
       ? await getVisibleStoreIds(client, userId, role)
       : [];
 
-    // Helper to apply the same filters to both period and opening-balance queries.
-    // Must be synchronous: Supabase query builders are thenables; returning one
-    // from an async function auto-executes the query and returns the response.
-    const applyFilters = (baseQuery: any) => {
-      // Parent accounts: only approved transactions
-      // Child accounts: own pending + all approved
+    // Build parameterized summary query
+    const buildSummaryQuery = (isOpening: boolean) => {
+      let sql = 'SELECT type, SUM(amount) as total FROM transactions WHERE ';
+      const params: unknown[] = [];
+
       if (role === 'parent') {
-        baseQuery = baseQuery.eq("status", "approved");
+        sql += "status = 'approved' AND user_id = ANY($1::uuid[])";
+        params.push(visibleIds);
       } else {
-        baseQuery = baseQuery.or(`and(user_id.eq.${userId},status.neq.pending_delete),and(status.eq.approved,user_id.neq.${userId})`);
+        sql += `(
+          (user_id = $1 AND status != 'pending_delete')
+          OR (user_id != $1 AND user_id = ANY($2::uuid[]) AND status = 'approved')
+        )`;
+        params.push(userId, visibleIds);
       }
-      // Store filtering for summary
+
       if (req.query.store_id) {
-        baseQuery = baseQuery.eq("store_id", req.query.store_id as string);
+        sql += ` AND store_id = $${params.length + 1}::uuid`;
+        params.push(req.query.store_id as string);
       } else if (role === 'child') {
-        if (visibleStoreIds.length > 0) {
-          baseQuery = baseQuery.or(`store_id.is.null,store_id.in.(${visibleStoreIds.join(',')})`);
-        } else {
-          baseQuery = baseQuery.is("store_id", null);
-        }
+        sql += ` AND (store_id IS NULL OR store_id = ANY($${params.length + 1}::uuid[]))`;
+        params.push(visibleStoreIds);
       }
-      return baseQuery;
+
+      if (start_date) {
+        const start = start_date as string;
+        if (isOpening) {
+          sql += ` AND date < $${params.length + 1}::timestamptz`;
+        } else {
+          sql += ` AND date >= $${params.length + 1}::timestamptz`;
+        }
+        params.push(start);
+      }
+
+      if (!isOpening && end_date) {
+        const d = new Date((end_date as string) + 'T00:00:00Z');
+        d.setDate(d.getDate() + 1);
+        sql += ` AND date < $${params.length + 1}::timestamptz`;
+        params.push(d.toISOString());
+      }
+
+      sql += ' GROUP BY type';
+      return { sql, params };
     };
 
     // Opening balance: all transactions before start_date with same filters
     let opening_balance = 0;
     if (start_date) {
-      let openingQuery = applyFilters(
-        client
-          .from("transactions")
-          .select("amount, type")
-          .in("user_id", visibleIds)
-      );
-      openingQuery = openingQuery.lt("date", start_date as string);
-      const { data: openingData, error: openingError } = await openingQuery;
-      if (openingError) throw new Error(`查询期初余额失败: ${openingError.message}`);
-      for (const item of openingData || []) {
-        if (item.type === "income") {
-          opening_balance += parseFloat(item.amount);
+      const { sql: openingSql, params: openingParams } = buildSummaryQuery(true);
+      const openingRows = await queryAll(openingSql, openingParams);
+      for (const row of openingRows) {
+        const total = parseFloat(row.total ?? '0');
+        if (row.type === 'income') {
+          opening_balance += total;
         } else {
-          opening_balance -= parseFloat(item.amount);
+          opening_balance -= total;
         }
       }
     }
 
-    let query = applyFilters(
-      client
-        .from("transactions")
-        .select("id, amount, type")
-        .in("user_id", visibleIds)
-    );
-
-    if (start_date) {
-      query = query.gte("date", start_date as string);
-    }
-    if (end_date) {
-      // date column is timestamptz, use lt with next day to include all times
-      const d = new Date((end_date as string) + 'T00:00:00Z');
-      d.setDate(d.getDate() + 1);
-      query = query.lt("date", d.toISOString());
-    }
-
-    const { data, error } = await query;
-    if (error) throw new Error(`查询失败: ${error.message}`);
+    // Period totals
+    const { sql: periodSql, params: periodParams } = buildSummaryQuery(false);
+    const periodRows = await queryAll(periodSql, periodParams);
 
     let total_income = 0;
     let total_expense = 0;
-    for (const item of data || []) {
-      if (item.type === "income") {
-        total_income += parseFloat(item.amount);
+    for (const row of periodRows) {
+      const total = parseFloat(row.total ?? '0');
+      if (row.type === 'income') {
+        total_income += total;
       } else {
-        total_expense += parseFloat(item.amount);
+        total_expense += total;
       }
     }
 
     const periodBalance = total_income - total_expense;
-    const ending_balance = opening_balance + periodBalance;
+    const ending_balance = opening_balance + periodBalance; 
 
     res.json({
       data: {
