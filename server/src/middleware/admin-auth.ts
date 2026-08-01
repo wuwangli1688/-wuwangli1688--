@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { dashboardHtml, loginHtml } from '../generated/admin-html.js';
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'jizhang-admin-secret-2024';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
@@ -74,6 +75,19 @@ export function adminAuthMiddleware(
   }
 
   if (!token) {
+    const path = req.path || req.originalUrl || '';
+    if (path.includes('/dashboard') && !path.includes('/dashboard-data')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.send(dashboardHtml);
+      return;
+    }
+    if (path.includes('/login')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.send(loginHtml);
+      return;
+    }
     res.status(401).json({ error: '请先登录管理后台' });
     return;
   }
