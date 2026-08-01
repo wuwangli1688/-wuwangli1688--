@@ -183,6 +183,8 @@ export default function HomeScreen() {
         if (summaryRes.ok) {
           const s = await summaryRes.json();
           summaryData = s.data || summaryData;
+        } else {
+          console.error('Summary API error', summaryRes.status, await summaryRes.text());
         }
 
         // Only update if this is still the latest request

@@ -362,8 +362,15 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
 
     const visibleIds = await getVisibleUserIds(client, userId, role, parentUserId ?? null);
 
-    // Helper to apply the same filters to both period and opening-balance queries
-    const applyFilters = async (baseQuery: any) => {
+    // Pre-compute child visible store IDs (needed for sync filter application)
+    const visibleStoreIds = role === 'child' && !req.query.store_id
+      ? await getVisibleStoreIds(client, userId, role)
+      : [];
+
+    // Helper to apply the same filters to both period and opening-balance queries.
+    // Must be synchronous: Supabase query builders are thenables; returning one
+    // from an async function auto-executes the query and returns the response.
+    const applyFilters = (baseQuery: any) => {
       // Parent accounts: only approved transactions
       // Child accounts: own pending + all approved
       if (role === 'parent') {
@@ -375,7 +382,6 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
       if (req.query.store_id) {
         baseQuery = baseQuery.eq("store_id", req.query.store_id as string);
       } else if (role === 'child') {
-        const visibleStoreIds = await getVisibleStoreIds(client, userId, role);
         if (visibleStoreIds.length > 0) {
           baseQuery = baseQuery.or(`store_id.is.null,store_id.in.(${visibleStoreIds.join(',')})`);
         } else {
@@ -388,11 +394,12 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
     // Opening balance: all transactions before start_date with same filters
     let opening_balance = 0;
     if (start_date) {
-      let openingQuery = client
-        .from("transactions")
-        .select("amount, type")
-        .in("user_id", visibleIds);
-      openingQuery = await applyFilters(openingQuery);
+      let openingQuery = applyFilters(
+        client
+          .from("transactions")
+          .select("amount, type")
+          .in("user_id", visibleIds)
+      );
       openingQuery = openingQuery.lt("date", start_date as string);
       const { data: openingData, error: openingError } = await openingQuery;
       if (openingError) throw new Error(`查询期初余额失败: ${openingError.message}`);
@@ -405,11 +412,12 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
       }
     }
 
-    let query = client
-      .from("transactions")
-      .select("id, amount, type")
-      .in("user_id", visibleIds);
-    query = await applyFilters(query);
+    let query = applyFilters(
+      client
+        .from("transactions")
+        .select("id, amount, type")
+        .in("user_id", visibleIds)
+    );
 
     if (start_date) {
       query = query.gte("date", start_date as string);
