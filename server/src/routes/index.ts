@@ -362,18 +362,54 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
 
     const visibleIds = await getVisibleUserIds(client, userId, role, parentUserId ?? null);
 
+    // Helper to apply the same filters to both period and opening-balance queries
+    const applyFilters = async (baseQuery: any) => {
+      // Parent accounts: only approved transactions
+      // Child accounts: own pending + all approved
+      if (role === 'parent') {
+        baseQuery = baseQuery.eq("status", "approved");
+      } else {
+        baseQuery = baseQuery.or(`and(user_id.eq.${userId},status.neq.pending_delete),and(status.eq.approved,user_id.neq.${userId})`);
+      }
+      // Store filtering for summary
+      if (req.query.store_id) {
+        baseQuery = baseQuery.eq("store_id", req.query.store_id as string);
+      } else if (role === 'child') {
+        const visibleStoreIds = await getVisibleStoreIds(client, userId, role);
+        if (visibleStoreIds.length > 0) {
+          baseQuery = baseQuery.or(`store_id.is.null,store_id.in.(${visibleStoreIds.join(',')})`);
+        } else {
+          baseQuery = baseQuery.is("store_id", null);
+        }
+      }
+      return baseQuery;
+    };
+
+    // Opening balance: all transactions before start_date with same filters
+    let opening_balance = 0;
+    if (start_date) {
+      let openingQuery = client
+        .from("transactions")
+        .select("amount, type")
+        .in("user_id", visibleIds);
+      openingQuery = await applyFilters(openingQuery);
+      openingQuery = openingQuery.lt("date", start_date as string);
+      const { data: openingData, error: openingError } = await openingQuery;
+      if (openingError) throw new Error(`查询期初余额失败: ${openingError.message}`);
+      for (const item of openingData || []) {
+        if (item.type === "income") {
+          opening_balance += parseFloat(item.amount);
+        } else {
+          opening_balance -= parseFloat(item.amount);
+        }
+      }
+    }
+
     let query = client
       .from("transactions")
       .select("id, amount, type")
       .in("user_id", visibleIds);
-
-    // Parent accounts: only approved transactions
-    // Child accounts: own pending + all approved
-    if (role === 'parent') {
-      query = query.eq("status", "approved");
-    } else {
-      query = query.or(`and(user_id.eq.${userId},status.neq.pending_delete),and(status.eq.approved,user_id.neq.${userId})`);
-    }
+    query = await applyFilters(query);
 
     if (start_date) {
       query = query.gte("date", start_date as string);
@@ -383,17 +419,6 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
       const d = new Date((end_date as string) + 'T00:00:00Z');
       d.setDate(d.getDate() + 1);
       query = query.lt("date", d.toISOString());
-    }
-    // Store filtering for summary
-    if (req.query.store_id) {
-      query = query.eq("store_id", req.query.store_id as string);
-    } else if (role === 'child') {
-      const visibleStoreIds = await getVisibleStoreIds(client, userId, role);
-      if (visibleStoreIds.length > 0) {
-        query = query.or(`store_id.is.null,store_id.in.(${visibleStoreIds.join(',')})`);
-      } else {
-        query = query.is("store_id", null);
-      }
     }
 
     const { data, error } = await query;
@@ -409,11 +434,16 @@ router.get("/transactions/summary", async (req: AuthenticatedRequest, res: Respo
       }
     }
 
+    const periodBalance = total_income - total_expense;
+    const ending_balance = opening_balance + periodBalance;
+
     res.json({
       data: {
         total_income: total_income.toFixed(2),
         total_expense: total_expense.toFixed(2),
-        balance: (total_income - total_expense).toFixed(2),
+        balance: periodBalance.toFixed(2),
+        opening_balance: opening_balance.toFixed(2),
+        ending_balance: ending_balance.toFixed(2),
       },
     });
   } catch (err) {

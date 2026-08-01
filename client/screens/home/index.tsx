@@ -179,7 +179,7 @@ export default function HomeScreen() {
         }
 
         const listData = await listRes.json();
-        let summaryData = { total_income: 0, total_expense: 0, balance: 0 };
+        let summaryData: any = { total_income: 0, total_expense: 0, balance: 0, opening_balance: 0, ending_balance: 0 };
         if (summaryRes.ok) {
           const s = await summaryRes.json();
           summaryData = s.data || summaryData;
@@ -191,8 +191,11 @@ export default function HomeScreen() {
           const rawData = listData.data || [];
           const processedData = [...rawData];
 
+          // Get opening balance from summary; use it as starting point so monthly data is continuous
+          const openingBalance = Number(summaryData.opening_balance) || 0;
+
           // Enrich transactions: flatten categories, set is_income, calculate running balance
-          let runningBalance = 0;
+          let runningBalance = openingBalance; // start from previous months' balance
           for (const txn of processedData) {
             // Flatten nested categories (with fallback if join returns null)
             const catData = txn.categories || {};
@@ -223,7 +226,8 @@ export default function HomeScreen() {
             pagination: listData.pagination,
             total_income: Number(summaryData.total_income) || 0,
             total_expense: Number(summaryData.total_expense) || 0,
-            balance: Number(summaryData.balance) || 0,
+            balance: Number(summaryData.ending_balance ?? summaryData.balance) || 0,
+            carry_forward: openingBalance,
           });
         }
       } catch (e: any) {
@@ -478,7 +482,7 @@ export default function HomeScreen() {
   );
 
   const renderCarryForward = () => {
-    if (!monthData?.carry_forward) return null;
+    if (monthData?.carry_forward === undefined || monthData?.carry_forward === null) return null;
     return (
       <View style={styles.carryForwardRow}>
         <Text style={[styles.cfLabel, styles.colSerial, styles.colCenter]}>
