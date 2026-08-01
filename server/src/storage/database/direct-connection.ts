@@ -10,7 +10,10 @@ function getPool(): Pool {
 
   const dbUrl = process.env.PGDATABASE_URL;
   if (dbUrl) {
-    pool = new Pool({ connectionString: dbUrl });
+    pool = new Pool({
+      connectionString: dbUrl,
+      ssl: { rejectUnauthorized: false },
+    });
   } else {
     pool = new Pool({
       host: process.env.PGHOST || 'localhost',
