@@ -270,7 +270,7 @@ function closeHistoryModal() { document.getElementById('historyModal').classList
 
 // ==================== 仪表盘 ====================
 async function loadDashboard() {
-  const data = await apiFetch(API + '/dashboard');
+  const data = await apiFetch(API + '/dashboard-data');
   if (!data) return;
   document.getElementById('statsCards').innerHTML = `
     <div class="stat-card"><div class="num">${data.totalUsers}</div><div class="lbl">总用户</div></div>

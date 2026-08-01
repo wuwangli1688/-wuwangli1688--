@@ -39,7 +39,7 @@ adminLoginRouter.post('/login', (req: Request, res: Response) => {
 });
 
 /** ==================== 仪表盘 ==================== */
-router.get('/dashboard', async (req: Request, res: Response) => {
+router.get('/dashboard-data', async (req: Request, res: Response) => {
   try {
     // 总用户数（auth.users 包含所有用户）
     const totalUsers = await queryCount('SELECT count(*) FROM auth.users');
