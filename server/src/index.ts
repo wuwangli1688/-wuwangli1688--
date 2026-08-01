@@ -16,6 +16,25 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.PORT || 9091;
 
+// Admin panel HTML pages must be served before any auth middleware/routes
+// to prevent the admin auth router from intercepting these public HTML endpoints.
+app.use('/api/v1/admin/dashboard', (req, res, next) => {
+  if (req.method !== 'GET') return next();
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.send(dashboardHtml);
+});
+app.use('/api/v1/admin/login', (req, res, next) => {
+  if (req.method !== 'GET') return next();
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.send(loginHtml);
+});
+
 // Middleware
 const allowedOrigins = [
   'http://localhost:5000',
@@ -39,16 +58,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.get('/api/v1/health', (req, res) => {
   console.log('Health check success');
   res.status(200).json({ status: 'ok' });
-});
-
-// Serve admin panel via API routes (bypasses nginx static file caching issues)
-app.get('/api/v1/admin/dashboard', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(dashboardHtml);
-});
-app.get('/api/v1/admin/login', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(loginHtml);
 });
 
 // Serve admin panel static files
