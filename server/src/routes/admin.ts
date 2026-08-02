@@ -2,37 +2,510 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { adminAuthMiddleware, createAdminToken, verifyAdminCredentials } from '../middleware/admin-auth.js';
 import { queryAll, queryOne, queryCount, execute, decodeDisplayName, syncAllData } from '../storage/database/direct-connection.js';
-import { dashboardHtml, loginHtml } from '../generated/admin-html.js';
-
-const router = Router();
 
 /** 根据邮箱域名判断注册来源 */
 function getRegisterSource(email: string, dbSource?: string | null): string {
-  // 微信小程序用户优先从 email 判断（不受数据库默认值影响）
   if (email && email.includes('@wechat.local')) return '微信小程序';
-  // 再使用数据库存储的注册来源
   if (dbSource) return dbSource;
-  // 最后 fallback
   if (!email) return 'App';
   return 'App';
 }
 
-/** ==================== 管理员登录（无需中间件，单独注册） ==================== */
+/** ==================== 管理员登录路由（无需鉴权） ==================== */
 export const adminLoginRouter = Router();
 
-// 登录页与仪表盘 HTML 页面不需要鉴权，放在最前面避免被 adminAuthMiddleware 拦截
+const LOGIN_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>开发者后台登录</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      width: 100%;
+      max-width: 420px;
+      padding: 40px 32px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 24px;
+      color: #1f2937;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+    .field { margin-bottom: 18px; }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 15px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
+    }
+    button {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    button:hover { opacity: 0.92; }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error {
+      margin-top: 14px;
+      padding: 10px 12px;
+      background: #fee2e2;
+      color: #991b1b;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+    .error.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>开发者后台</h1>
+    <p class="subtitle">请使用管理员账号登录</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="username">用户名</label>
+        <input id="username" name="username" type="text" placeholder="请输入用户名" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" placeholder="请输入密码" autocomplete="current-password" required />
+      </div>
+      <button type="submit" id="submitBtn">登 录</button>
+      <div id="error" class="error"></div>
+    </form>
+  </div>
+  <script>
+    (function() {
+      var form = document.getElementById('loginForm');
+      var errorEl = document.getElementById('error');
+      var submitBtn = document.getElementById('submitBtn');
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        errorEl.className = 'error';
+        submitBtn.disabled = true;
+        submitBtn.textContent = '登录中...';
+        var username = document.getElementById('username').value.trim();
+        var password = document.getElementById('password').value;
+        fetch('login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username, password: password })
+        })
+        .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+        .then(function(result) {
+          if (!result.ok) throw new Error(result.data.error || '登录失败');
+          localStorage.setItem('admin_token', result.data.token);
+          window.location.href = 'dashboard';
+        })
+        .catch(function(err) {
+          errorEl.textContent = err.message || '登录失败，请重试';
+          errorEl.className = 'error show';
+          submitBtn.disabled = false;
+          submitBtn.textContent = '登 录';
+        });
+      });
+    })();
+  </script>
+</body>
+</html>`;
+
+const DASHBOARD_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>开发者后台</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #f3f4f6;
+      color: #1f2937;
+      min-height: 100vh;
+    }
+    .topbar {
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .topbar h1 { font-size: 18px; font-weight: 700; }
+    .topbar-actions { display: flex; gap: 10px; }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #374151;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: #f9fafb; }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      border: none;
+    }
+    .btn-primary:hover { opacity: 0.92; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .container { padding: 24px; max-width: 1400px; margin: 0 auto; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .stat-label { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: #111827; }
+    .panel {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      padding: 20px;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .panel-title { font-size: 16px; font-weight: 700; }
+    .search-box {
+      display: flex;
+      gap: 8px;
+    }
+    .search-box input {
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 13px;
+      min-width: 220px;
+    }
+    .search-box input:focus { outline: none; border-color: #667eea; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #f3f4f6; }
+    th { color: #6b7280; font-weight: 600; background: #f9fafb; }
+    tr:hover { background: #f9fafb; }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .tag-parent { background: #dbeafe; color: #1e40af; }
+    .tag-child { background: #fce7f3; color: #9d174d; }
+    .tag-pro { background: #d1fae5; color: #065f46; }
+    .tag-free { background: #f3f4f6; color: #4b5563; }
+    .stores { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #6b7280; }
+    .empty { text-align: center; padding: 48px; color: #9ca3af; }
+    .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 16px; }
+    .pagination button { width: auto; padding: 6px 12px; }
+    .pagination span { font-size: 13px; color: #6b7280; }
+    .children-row { background: #fafafa; }
+    .children-cell { padding: 12px 12px 12px 48px; }
+    .child-list { margin: 0; padding-left: 16px; color: #4b5563; }
+    .child-list li { margin-bottom: 6px; }
+    .link { color: #667eea; cursor: pointer; text-decoration: underline; }
+    .loading { text-align: center; padding: 40px; color: #6b7280; }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1f2937;
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      display: none;
+      z-index: 100;
+    }
+    .toast.show { display: block; }
+    @media (max-width: 768px) {
+      .container { padding: 12px; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      table { min-width: 800px; }
+      .table-wrap { overflow-x: auto; }
+      .topbar { padding: 12px 16px; }
+      .search-box input { min-width: 140px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>开发者后台</h1>
+    <div class="topbar-actions">
+      <button class="btn btn-primary" id="syncBtn" onclick="syncData()">同步数据</button>
+      <button class="btn" onclick="logout()">退出登录</button>
+    </div>
+  </div>
+  <div class="container">
+    <div class="stats" id="stats"></div>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">用户列表</div>
+        <div class="search-box">
+          <input id="searchInput" type="text" placeholder="搜索账号 / 显示名" onkeydown="if(event.key==='Enter')loadUsers(1)" />
+          <button class="btn" onclick="loadUsers(1)">搜索</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>登录账号</th>
+              <th>显示名</th>
+              <th>角色</th>
+              <th>店铺</th>
+              <th>套餐</th>
+              <th>交易数</th>
+              <th>注册来源</th>
+              <th>注册时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="usersTable"></tbody>
+        </table>
+      </div>
+      <div id="loading" class="loading" style="display:none;">加载中...</div>
+      <div id="empty" class="empty" style="display:none;">暂无数据</div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script>
+    var API_BASE = '';
+    var currentPage = 1;
+    var expandedRows = {};
+
+    function getToken() { return localStorage.getItem('admin_token') || ''; }
+    function authHeaders() { return { 'x-admin-token': getToken(), 'Content-Type': 'application/json' }; }
+    function showToast(msg) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast show';
+      setTimeout(function() { el.className = 'toast'; }, 2500);
+    }
+    function api(path, opts) {
+      opts = opts || {};
+      opts.headers = Object.assign({}, opts.headers || {}, authHeaders());
+      return fetch(API_BASE + path, opts).then(function(r) {
+        return r.json().then(function(data) {
+          if (!r.ok) throw new Error(data.error || '请求失败');
+          return data;
+        });
+      });
+    }
+    function formatDate(d) {
+      if (!d) return '-';
+      var date = new Date(d);
+      return date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0');
+    }
+    function loadStats() {
+      api('dashboard-data').then(function(data) {
+        var html = '';
+        var items = [
+          { label: '总用户', value: data.totalUsers },
+          { label: '主账号', value: data.parentUsers },
+          { label: '子账号', value: data.childUsers },
+          { label: '活跃用户', value: data.totalActive },
+          { label: '今日活跃', value: data.todayActive },
+          { label: '本周活跃', value: data.weekActive },
+          { label: '总收入', value: '¥' + (data.totalRevenue || 0).toFixed(2) },
+          { label: '本月收入', value: '¥' + (data.thisMonthRevenue || 0).toFixed(2) },
+          { label: '订单数', value: data.totalOrders },
+          { label: '已付款', value: data.paidOrders },
+          { label: 'Pro用户', value: data.proCount },
+          { label: '反馈数', value: data.feedbackCount }
+        ];
+        items.forEach(function(item) {
+          html += '<div class="stat-card"><div class="stat-label">' + item.label + '</div><div class="stat-value">' + item.value + '</div></div>';
+        });
+        document.getElementById('stats').innerHTML = html;
+      }).catch(function(err) {
+        console.error(err);
+        if (err.message && err.message.indexOf('登录') > -1) logout();
+      });
+    }
+    function renderUsers(data) {
+      var tbody = document.getElementById('usersTable');
+      var empty = document.getElementById('empty');
+      var pagination = document.getElementById('pagination');
+      if (!data.users || data.users.length === 0) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        pagination.innerHTML = '';
+        return;
+      }
+      empty.style.display = 'none';
+      var html = '';
+      data.users.forEach(function(u) {
+        var roleClass = u.role === 'parent' ? 'tag-parent' : 'tag-child';
+        var roleText = u.role === 'parent' ? '主账号' : '子账号';
+        var plan = (u.subscription && u.subscription.plan_type) || 'free';
+        var planClass = plan === 'pro' ? 'tag-pro' : 'tag-free';
+        var planText = plan === 'pro' ? 'Pro' : 'Free';
+        var stores = u.storeNames || '-';
+        html += '<tr>';
+        html += '<td>' + (u.login_name || '-') + '</td>';
+        html += '<td>' + (u.display_name || '-') + '</td>';
+        html += '<td><span class="tag ' + roleClass + '">' + roleText + '</span></td>';
+        html += '<td class="stores" title="' + stores.replace(/"/g, '&quot;') + '">' + stores + '</td>';
+        html += '<td><span class="tag ' + planClass + '">' + planText + '</span></td>';
+        html += '<td>' + (u.txCount || 0) + '</td>';
+        html += '<td>' + (u.register_source || '-') + '</td>';
+        html += '<td>' + formatDate(u.created_at) + '</td>';
+        html += '<td>';
+        if (u.role === 'parent' && u.children && u.children.length > 0) {
+          html += '<span class="link" onclick="toggleChildren(\'' + u.id + '\')">' + (expandedRows[u.id] ? '收起子账号' : '查看子账号(' + u.children.length + ')') + '</span>';
+        } else {
+          html += '-';
+        }
+        html += '</td>';
+        html += '</tr>';
+        if (u.role === 'parent' && u.children && u.children.length > 0) {
+          var show = expandedRows[u.id] ? 'table-row' : 'none';
+          html += '<tr class="children-row" id="child-row-' + u.id + '" style="display:' + show + ';">';
+          html += '<td colspan="9" class="children-cell">';
+          html += '<ul class="child-list">';
+          u.children.forEach(function(c) {
+            html += '<li><strong>' + (c.login_name || '-') + '</strong> · ' + (c.display_name || '-') + ' · ' + formatDate(c.created_at) + '</li>';
+          });
+          html += '</ul></td></tr>';
+        }
+      });
+      tbody.innerHTML = html;
+
+      var phtml = '';
+      if (data.totalPages > 1) {
+        phtml += '<button class="btn" onclick="loadUsers(' + (currentPage - 1) + ')" ' + (currentPage <= 1 ? 'disabled' : '') + '>上一页</button>';
+        phtml += '<span>第 ' + currentPage + ' / ' + data.totalPages + ' 页，共 ' + data.total + ' 条</span>';
+        phtml += '<button class="btn" onclick="loadUsers(' + (currentPage + 1) + ')" ' + (currentPage >= data.totalPages ? 'disabled' : '') + '>下一页</button>';
+      } else if (data.total > 0) {
+        phtml += '<span>共 ' + data.total + ' 条</span>';
+      }
+      pagination.innerHTML = phtml;
+    }
+    function loadUsers(page) {
+      currentPage = page || 1;
+      var search = document.getElementById('searchInput').value.trim();
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('usersTable').innerHTML = '';
+      document.getElementById('empty').style.display = 'none';
+      document.getElementById('pagination').innerHTML = '';
+      var url = 'users?page=' + currentPage + '&limit=20';
+      if (search) url += '&search=' + encodeURIComponent(search);
+      api(url).then(function(data) {
+        document.getElementById('loading').style.display = 'none';
+        renderUsers(data);
+      }).catch(function(err) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('empty').style.display = 'block';
+        document.getElementById('empty').textContent = err.message || '加载失败';
+        if (err.message && err.message.indexOf('登录') > -1) logout();
+      });
+    }
+    function toggleChildren(id) {
+      expandedRows[id] = !expandedRows[id];
+      loadUsers(currentPage);
+    }
+    function syncData() {
+      var btn = document.getElementById('syncBtn');
+      btn.disabled = true;
+      btn.textContent = '同步中...';
+      api('sync-all', { method: 'POST' }).then(function(data) {
+        showToast(data.message || '同步完成');
+        loadStats();
+        loadUsers(1);
+      }).catch(function(err) {
+        showToast(err.message || '同步失败');
+        if (err.message && err.message.indexOf('登录') > -1) logout();
+      }).finally(function() {
+        btn.disabled = false;
+        btn.textContent = '同步数据';
+      });
+    }
+    function logout() {
+      localStorage.removeItem('admin_token');
+      window.location.href = 'login';
+    }
+    if (!getToken()) {
+      window.location.href = 'login';
+    } else {
+      loadStats();
+      loadUsers(1);
+    }
+  </script>
+</body>
+</html>`;
+
+// 登录页 HTML（无需鉴权）
 adminLoginRouter.get('/login', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.send(loginHtml);
+  res.send(LOGIN_HTML);
 });
 
+// 仪表盘 HTML（无需鉴权，由前端 JS 自行携带 token 调用数据接口）
 adminLoginRouter.get('/dashboard', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.send(dashboardHtml);
+  res.send(DASHBOARD_HTML);
 });
 
+// 登录接口
 adminLoginRouter.post('/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -49,27 +522,18 @@ adminLoginRouter.post('/login', (req: Request, res: Response) => {
   res.json({ token, username: 'admin' });
 });
 
-/** 所有路由都需要管理员身份验证 */
+/** ==================== 以下路由需要管理员身份验证 ==================== */
+const router = Router();
 router.use(adminAuthMiddleware);
 
 /** ==================== 仪表盘 ==================== */
 router.get('/dashboard-data', async (req: Request, res: Response) => {
   try {
-    // 总用户数（auth.users 包含所有用户）
     const totalUsers = await queryCount('SELECT count(*) FROM auth.users');
-
-    // 主账号数（user_profiles 中 role=parent 或 没有 user_profiles 记录的用户默认为主账号）
     const parentUsers = await queryCount("SELECT count(*) FROM auth.users a LEFT JOIN user_profiles u ON a.id = u.id WHERE (u.role IS NULL OR u.role = 'parent')");
-
-    // 子账号数
     const childUsers = await queryCount("SELECT count(*) FROM user_profiles WHERE role = 'child'");
+    const totalActive = await queryCount('SELECT count(DISTINCT user_id) FROM transactions');
 
-    // 总活跃用户（历史有交易记录的用户数）
-    const totalActive = await queryCount(
-      'SELECT count(DISTINCT user_id) FROM transactions'
-    );
-
-    // 今日活跃用户
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayActive = await queryCount(
@@ -77,7 +541,6 @@ router.get('/dashboard-data', async (req: Request, res: Response) => {
       [today.toISOString()]
     );
 
-    // 本周活跃
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     const weekActive = await queryCount(
@@ -85,12 +548,10 @@ router.get('/dashboard-data', async (req: Request, res: Response) => {
       [weekAgo.toISOString()]
     );
 
-    // 订阅统计
     const subs = await queryAll('SELECT plan_type FROM subscriptions');
     const proCount = subs.filter((s: any) => s.plan_type === 'pro').length;
     const freeCount = subs.filter((s: any) => s.plan_type === 'free').length;
 
-    // 订单统计
     const orders = await queryAll('SELECT amount, status, created_at FROM subscription_orders');
     const totalRevenue = orders.reduce((sum: number, o: any) => sum + (o.status === 'paid' ? parseFloat(o.amount) : 0), 0);
     const now = new Date();
@@ -101,8 +562,6 @@ router.get('/dashboard-data', async (req: Request, res: Response) => {
 
     const totalOrders = orders.length;
     const paidOrders = orders.filter((o: any) => o.status === 'paid').length;
-
-    // 反馈数
     const feedbackCount = await queryCount('SELECT count(*) FROM feedback');
 
     res.json({
@@ -134,7 +593,6 @@ router.get('/users', async (req: Request, res: Response) => {
     const search = req.query.search as string || '';
     const offset = (page - 1) * limit;
 
-    // 使用 auth.users 作为主表（所有用户都有记录），LEFT JOIN user_profiles（部分用户可能没有）
     let countSql = 'SELECT count(*) FROM auth.users';
     let sql = `SELECT a.id,
                COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
@@ -164,7 +622,6 @@ router.get('/users', async (req: Request, res: Response) => {
     const total = await queryCount(countSql, countParams);
     const users = await queryAll(sql, params);
 
-    // 获取每个用户的订阅、交易数、子账号数、门店数、活跃指数、标签、最近活跃时间
     const userIds = users.map((u: any) => u.id);
     const enrichedUsers = await Promise.all(userIds.map(async (uid: string) => {
       const [subRows, txCount, subAccountCount, storeCount,
@@ -195,7 +652,6 @@ router.get('/users', async (req: Request, res: Response) => {
       };
     }));
 
-    // 计算每个用户的子账号详情
     const finalUsers = await Promise.all(enrichedUsers.map(async (u: any) => {
       if (u.role === 'parent') {
         const childProfiles = await queryAll(
@@ -299,7 +755,6 @@ router.get('/feedbacks', async (req: Request, res: Response) => {
       [limit, offset]
     );
 
-    // 获取反馈用户的用户名（使用 auth.users 作为主表，兼容没有 user_profiles 的用户）
     const userIds = [...new Set(feedbacks.map((f: any) => f.user_id))];
     let profiles: any[] = [];
     if (userIds.length > 0) {
@@ -362,7 +817,6 @@ router.get('/orders', async (req: Request, res: Response) => {
       [...params, limit, offset]
     );
 
-    // 获取用户信息
     const userIds = [...new Set(orders.map((o: any) => o.user_id))];
     let profiles: any[] = [];
     if (userIds.length > 0) {
@@ -414,13 +868,11 @@ router.post('/orders/:id/confirm', async (req: Request, res: Response) => {
       return;
     }
 
-    // 更新订单状态
     await execute(
       'UPDATE subscription_orders SET status = $1, paid_at = $2 WHERE id = $3',
       ['paid', new Date().toISOString(), id]
     );
 
-    // 激活订阅
     const existingSub = await queryOne('SELECT id FROM subscriptions WHERE user_id = $1', [order.user_id]);
 
     if (existingSub) {
@@ -530,38 +982,30 @@ router.get('/users/search', async (req: Request, res: Response) => {
 // Display Name History Routes
 // ==========================================
 
-/**
- * PUT /api/v1/admin/users/:id/display-name
- * Update user display name and record history
- * Body: { display_name: string }
- */
 router.put('/users/:id/display-name', async (req, res) => {
   try {
     const { id } = req.params;
     const { display_name } = req.body;
-    
+
     if (!display_name || display_name.trim().length === 0) {
-      return res.status(400).json({ error: '显示名称不能为空' });
+      res.status(400).json({ error: '显示名称不能为空' });
+      return;
     }
-    
-    // Get current display name
+
     const currentQuery = await queryOne('SELECT display_name FROM user_profiles WHERE id = $1', [id]);
     const oldName = currentQuery?.display_name || '';
-    
-    // Update display name
+
     await execute('UPDATE user_profiles SET display_name = $1 WHERE id = $2', [display_name.trim(), id]);
-    
-    // If no row was updated, insert into user_profiles
+
     if (currentQuery === null) {
       await execute('INSERT INTO user_profiles (id, display_name, role) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET display_name = $2', [id, display_name.trim(), 'parent']);
     }
-    
-    // Record history
+
     await execute(
       'INSERT INTO display_name_history (user_id, old_name, new_name) VALUES ($1, $2, $3)',
       [id, oldName, display_name.trim()]
     );
-    
+
     res.json({ success: true, display_name: display_name.trim() });
   } catch (error) {
     console.error('更新显示名称失败:', error);
@@ -569,10 +1013,6 @@ router.put('/users/:id/display-name', async (req, res) => {
   }
 });
 
-/**
- * GET /api/v1/admin/users/:id/display-name-history
- * Get display name change history for a user
- */
 router.get('/users/:id/display-name-history', async (req, res) => {
   try {
     const { id } = req.params;
@@ -591,10 +1031,6 @@ router.get('/users/:id/display-name-history', async (req, res) => {
 // User Tags Routes
 // ==========================================
 
-/**
- * GET /api/v1/admin/users/:id/tags
- * Get tags for a user
- */
 router.get('/users/:id/tags', async (req, res) => {
   try {
     const { id } = req.params;
@@ -606,25 +1042,21 @@ router.get('/users/:id/tags', async (req, res) => {
   }
 });
 
-/**
- * POST /api/v1/admin/users/:id/tags
- * Add a tag to a user
- * Body: { tag: string }
- */
 router.post('/users/:id/tags', async (req, res) => {
   try {
     const { id } = req.params;
     const { tag } = req.body;
-    
+
     if (!tag || tag.trim().length === 0) {
-      return res.status(400).json({ error: '标签不能为空' });
+      res.status(400).json({ error: '标签不能为空' });
+      return;
     }
-    
+
     await execute(
       'INSERT INTO user_tags (user_id, tag) VALUES ($1, $2) ON CONFLICT (user_id, tag) DO NOTHING',
       [id, tag.trim()]
     );
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('添加标签失败:', error);
@@ -632,10 +1064,6 @@ router.post('/users/:id/tags', async (req, res) => {
   }
 });
 
-/**
- * DELETE /api/v1/admin/users/:id/tags/:tag
- * Remove a tag from a user
- */
 router.delete('/users/:id/tags/:tag', async (req, res) => {
   try {
     const { id, tag } = req.params;
@@ -651,52 +1079,44 @@ router.delete('/users/:id/tags/:tag', async (req, res) => {
 // Activity Logs Routes
 // ==========================================
 
-/**
- * GET /api/v1/admin/users/:id/activity
- * Get activity logs + transaction history for a user
- */
 router.get('/users/:id/activity', async (req, res) => {
   try {
     const { id } = req.params;
     const { page = '1', limit = '20' } = req.query;
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-    
-    // Get activity logs
+
     const totalResult = await queryOne('SELECT count(*) as count FROM activity_logs WHERE user_id = $1', [id]);
     const total = parseInt(totalResult?.count || '0');
-    
+
     const logs = await queryAll(
       'SELECT * FROM activity_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
       [id, parseInt(limit as string), offset]
     );
-    
-    // Also get transaction history as activity records
+
     const txActivity = await queryAll(
       'SELECT id, created_at, type, amount, note, category_id FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20',
       [id]
     );
     const txTotal = await queryOne('SELECT count(*) as count FROM transactions WHERE user_id = $1', [id]);
-    
-    // Combine into activity records
+
     const activities = logs.map((l: any) => ({
       created_at: l.created_at,
       action: l.activity_type + (l.description ? ': ' + l.description : ''),
       type: 'log'
     }));
-    
+
     const txActivities = txActivity.map((t: any) => ({
       created_at: t.created_at,
       action: (t.type === 'income' ? '收入' : '支出') + ' ' + t.amount + '元' + (t.note ? ' (' + t.note + ')' : ''),
       type: 'transaction'
     }));
-    
-    // Merge and sort by created_at desc
+
     const allActivities = [...activities, ...txActivities].sort((a: any, b: any) => {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-    
-    res.json({ 
-      activities: allActivities, 
+
+    res.json({
+      activities: allActivities,
       total: total + parseInt(txTotal?.count || '0'),
       summary: { activity_logs: total, transactions: parseInt(txTotal?.count || '0') }
     });
@@ -706,10 +1126,6 @@ router.get('/users/:id/activity', async (req, res) => {
   }
 });
 
-/**
- * POST /api/v1/admin/activity/seed
- * Seed test activity data for demo purposes
- */
 router.post('/activity/seed', async (req, res) => {
   try {
     const { user_id, activity_type = 'login', description = '测试活动' } = req.body;
@@ -749,20 +1165,15 @@ router.get('/users/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    // 获取订阅信息
     const subscription = await queryOne(
       'SELECT * FROM subscriptions WHERE user_id = $1',
       [id]
     );
 
-    // 获取交易统计
     const txCount = await queryCount('SELECT count(*) FROM transactions WHERE user_id = $1', [id]);
-
-    // 获取门店数据
     const storeCount = await queryCount('SELECT count(*) FROM stores WHERE owner_id = $1', [id]);
     const storeNames = (await queryAll('SELECT name FROM stores WHERE owner_id = $1', [id])).map((s: any) => s.name).join(', ');
 
-    // 获取子账号
     const children = await queryAll(
       `SELECT u.id, u.display_name, u.role, u.created_at,
               COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name,
@@ -773,13 +1184,11 @@ router.get('/users/:id', async (req: Request, res: Response) => {
       [id]
     );
 
-    // 获取订单
     const orders = await queryAll(
       'SELECT * FROM subscription_orders WHERE user_id = $1 ORDER BY created_at DESC',
       [id]
     );
 
-    // 获取活跃指数、标签、最近活跃时间
     const tags = await queryAll('SELECT tag FROM user_tags WHERE user_id = $1', [id]);
     const lastActive = await queryOne(
       'SELECT MAX(created_at) as last_active FROM transactions WHERE user_id = $1',
@@ -816,7 +1225,7 @@ router.get('/users/:id', async (req: Request, res: Response) => {
   }
 });
 
-// 全量同步端点 - 同步所有用户数据、活动日志和交易记录
+// 全量同步端点
 router.post('/sync-all', async (req: any, res: any) => {
   try {
     const result = await syncAllData();

@@ -8,32 +8,11 @@ import adminRouter, { adminLoginRouter } from "./routes/admin.js";
 import supabaseConfigRouter from "./routes/supabase-config.js";
 import wechatRouter from "./routes/wechat.js";
 import { getSupabaseClient } from "./storage/database/supabase-client.js";
-import { dashboardHtml, loginHtml } from "./generated/admin-html.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const port = process.env.PORT || 9091;
-
-// Admin panel HTML pages must be served before any auth middleware/routes
-// to prevent the admin auth router from intercepting these public HTML endpoints.
-app.use('/api/v1/admin/dashboard', (req, res, next) => {
-  if (req.method !== 'GET') return next();
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.send(dashboardHtml);
-});
-app.use('/api/v1/admin/login', (req, res, next) => {
-  if (req.method !== 'GET') return next();
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  res.send(loginHtml);
-});
 
 // Middleware
 const allowedOrigins = [
@@ -60,16 +39,9 @@ app.get('/api/v1/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-// Serve admin panel static files
+// Serve public static files (privacy-policy.html etc.)
 const publicPath = path.join(__dirname, '..', 'public');
-app.use('/admin', express.static(path.join(publicPath, 'admin')));
-// Serve privacy-policy.html from public root
 app.use(express.static(publicPath));
-
-// Redirect /admin to /admin/login.html
-app.get('/admin', (req, res) => {
-  res.redirect('/admin/login.html');
-});
 
 // Version check endpoint (public, no auth)
 // Compare against a stored version instead of relying on hardcoded app version
@@ -161,9 +133,6 @@ app.use('/api/v1/admin', adminRouter);
 
 // API routes
 app.use('/api/v1', apiRouter);
-
-// Serve admin static files
-app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
 
 // Initialize database tables asynchronously
 import { createTables, syncUsers } from './storage/database/direct-connection.js';

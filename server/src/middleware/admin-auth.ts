@@ -1,6 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import { dashboardHtml, loginHtml } from '../generated/admin-html.js';
+
+// 注意：管理员 HTML 页面由 server/src/routes/admin.ts 中的 adminLoginRouter 直接提供，
+// 本中间件只负责鉴权，不再内联返回 HTML。
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || 'jizhang-admin-secret-2024';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
@@ -66,7 +68,6 @@ export function adminAuthMiddleware(
   next: NextFunction
 ): void {
   let token = req.headers['x-admin-token'] as string;
-  // Also support Authorization: Bearer <token>
   if (!token) {
     const authHeader = req.headers['authorization'] as string;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -75,19 +76,6 @@ export function adminAuthMiddleware(
   }
 
   if (!token) {
-    const path = req.path || req.originalUrl || '';
-    if (path.includes('/dashboard') && !path.includes('/dashboard-data')) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.send(dashboardHtml);
-      return;
-    }
-    if (path.includes('/login')) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.send(loginHtml);
-      return;
-    }
     res.status(401).json({ error: '请先登录管理后台' });
     return;
   }
