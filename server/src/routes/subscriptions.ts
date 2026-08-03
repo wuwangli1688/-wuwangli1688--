@@ -617,11 +617,11 @@ router.post('/purchase-sub-upgrade', async (req: AuthenticatedRequest, res: Resp
     res.json({
       data: {
         order,
-        sub_account: { id: subAccount.id, nickname: subAccount.nickname },
+        sub_account: { id: subAccount.id, display_name: subAccount.display_name },
         payment_info: {
           method: 'qrcode',
           amount: subPrice,
-          note: `即时记账-子账号升级-${subAccount.nickname || sub_account_id}`,
+          note: `即时记账-子账号升级-${subAccount.display_name || sub_account_id}`,
           alipay_qrcode_url: payConfig?.alipay_qrcode_url || null,
           wechat_qrcode_url: payConfig?.wechat_qrcode_url || null,
           contact_info: payConfig?.contact_info || '请联系管理员',

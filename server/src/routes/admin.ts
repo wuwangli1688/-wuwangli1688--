@@ -737,6 +737,68 @@ router.get('/users/:id', async (req: Request, res: Response) => {
   }
 });
 
+// Grant free trial to all existing users
+router.post('/users/grant-trial-all', async (req: Request, res: Response) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.body?.days || '90', 10) || 90, 1), 365);
+    const users = await queryAll<{ id: string }>('SELECT id FROM user_profiles');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + days);
+
+    let granted = 0;
+    let skipped = 0;
+
+    for (const user of users) {
+      const existing = await queryOne<{ id: string; plan_type: string; status: string; expires_at: string | null }>(
+        'SELECT id, plan_type, status, expires_at FROM subscriptions WHERE user_id = $1',
+        [user.id]
+      );
+
+      if (existing?.plan_type === 'pro' && existing?.status === 'active' && existing.expires_at) {
+        if (new Date(existing.expires_at) > expiresAt) {
+          skipped++;
+          continue;
+        }
+      }
+
+      const now = new Date().toISOString();
+      if (existing) {
+        await execute(
+          `UPDATE subscriptions SET plan_type = 'pro', status = 'active', store_limit = 9999, sub_account_limit = 9999, started_at = $1, expires_at = $2, updated_at = $1 WHERE id = $3`,
+          [now, expiresAt.toISOString(), existing.id]
+        );
+      } else {
+        await execute(
+          `INSERT INTO subscriptions (user_id, plan_type, status, store_limit, sub_account_limit, started_at, expires_at) VALUES ($1, 'pro', 'active', 9999, 9999, $2, $3)`,
+          [user.id, now, expiresAt.toISOString()]
+        );
+      }
+
+      await execute(
+        `INSERT INTO subscription_orders (order_id, user_id, plan_type, period, amount, status, paid_at, activated_at, description) VALUES ($1, $2, 'pro', 'monthly', 0, 'paid', $3, $3, $4)`,
+        [
+          `admin-trial-all-${Date.now()}-${user.id}`,
+          user.id,
+          now,
+          `管理员批量赠送-${days}天免费体验`,
+        ]
+      );
+
+      granted++;
+    }
+
+    await queryOne(
+      `INSERT INTO activity_logs (action, detail) VALUES ($1, $2) RETURNING id`,
+      ['admin_grant_trial_all', JSON.stringify({ days, granted, skipped })]
+    ).catch(() => null);
+
+    res.json({ data: { success: true, granted, skipped, expires_at: expiresAt.toISOString() } });
+  } catch (err) {
+    console.error('批量授权失败:', err);
+    res.status(500).json({ error: '批量授权失败', detail: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Grant free trial to a user
 router.post('/users/:id/grant-trial', async (req: Request, res: Response) => {
   try {
@@ -1968,6 +2030,10 @@ const dashboardHtml = `<!DOCTYPE html>
 
       main.innerHTML = \`
         <div class="page-title">用户管理</div>
+        <div class="card" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div style="color: #666; font-size: 14px;">可将所有现有用户设置为限时免费体验，体验期间功能全部开放。</div>
+          <button class="btn btn-success" onclick="grantTrialAll()">给全部用户3个月免费体验</button>
+        </div>
         <div class="card">
           <table>
             <thead>
@@ -2057,6 +2123,25 @@ const dashboardHtml = `<!DOCTYPE html>
     function closeUserModal() {
       const modal = document.getElementById('userModal');
       if (modal) modal.style.display = 'none';
+    }
+
+    async function grantTrialAll() {
+      if (!confirm('确定要给所有现有用户设置 3 个月免费体验吗？体验期间功能全部开放。')) return;
+      try {
+        const res = await apiRequest('/users/grant-trial-all', {
+          method: 'POST',
+          body: JSON.stringify({ days: 90 }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('已完成：新增/延长 ' + data.data.granted + ' 个账号，跳过 ' + data.data.skipped + ' 个已有更长期限的账号');
+          renderUsers();
+        } else {
+          alert('操作失败：' + (data.error || '未知错误'));
+        }
+      } catch (err) {
+        alert('操作失败：' + err.message);
+      }
     }
 
     async function grantTrial(userId) {

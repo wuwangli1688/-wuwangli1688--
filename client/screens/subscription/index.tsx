@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, TextInput, Platform, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, Image, Platform, KeyboardAvoidingView, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { FontAwesome6 } from '@expo/vector-icons';
@@ -62,6 +62,7 @@ export default function SubscriptionScreen() {
   const [ordering, setOrdering] = useState(false);
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState<any>(null);
+  const [confirmEndpoint, setConfirmEndpoint] = useState<'confirm-payment' | 'confirm-multi-store' | 'confirm-sub-upgrade'>('confirm-payment');
   const [confirming, setConfirming] = useState(false);
   const [showAlipay, setShowAlipay] = useState(true);
   const [cartModalVisible, setCartModalVisible] = useState(false);
@@ -75,7 +76,7 @@ export default function SubscriptionScreen() {
         authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/my`),
         authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/orders`),
         role === 'parent'
-          ? authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/sub-accounts`)
+          ? authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/my-accounts`)
           : Promise.resolve(null),
       ]);
       if (subRes.ok) {
@@ -88,7 +89,15 @@ export default function SubscriptionScreen() {
       }
       if (subsRes && subsRes.ok) {
         const data = await subsRes.json();
-        setSubAccounts(data.data || []);
+        const accounts = (data.data || []).map((acc: any) => ({
+          id: acc.id,
+          email: acc.email || '',
+          display_name: acc.display_name || acc.email || '未设置',
+          plan_type: acc.subscription?.plan_type || 'free',
+          status: acc.subscription?.status || 'active',
+          expires_at: acc.subscription?.expires_at || null,
+        }));
+        setSubAccounts(accounts);
       }
     } catch {
       // ignore
@@ -103,26 +112,55 @@ export default function SubscriptionScreen() {
     }, [fetchAll])
   );
 
-  const handleUpgrade = async (targetUserId?: string) => {
+  const openPaymentModal = (payload: any, endpoint: typeof confirmEndpoint) => {
+    setPaymentInfo({
+      order_id: payload?.order?.order_id,
+      amount: payload?.payment_info?.amount || 0,
+      note: payload?.payment_info?.note || '',
+      alipay_qrcode_url: payload?.payment_info?.alipay_qrcode_url || null,
+      wechat_qrcode_url: payload?.payment_info?.wechat_qrcode_url || null,
+      contact_info: payload?.payment_info?.contact_info || '请联系管理员',
+    });
+    setConfirmEndpoint(endpoint);
+    setShowAlipay(true);
+    setPaymentModalVisible(true);
+  };
+
+  const handleUpgrade = async () => {
     setOrdering(true);
     try {
-      const body: any = { plan_type: 'pro', period };
-      if (targetUserId) body.target_user_id = targetUserId;
-
       const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/create-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ plan_type: 'pro', period }),
       });
       const data = await res.json();
       if (!res.ok) {
         Alert.alert('下单失败', data.error || '请稍后重试');
         return;
       }
+      openPaymentModal(data.data, 'confirm-payment');
+    } catch {
+      Alert.alert('错误', '网络请求失败');
+    } finally {
+      setOrdering(false);
+    }
+  };
 
-      setPaymentInfo(data.data);
-      setShowAlipay(true);
-      setPaymentModalVisible(true);
+  const handleUpgradeSubAccount = async (subAccountId: string) => {
+    setOrdering(true);
+    try {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/purchase-sub-upgrade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sub_account_id: subAccountId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        Alert.alert('下单失败', data.error || '请稍后重试');
+        return;
+      }
+      openPaymentModal(data.data, 'confirm-sub-upgrade');
     } catch {
       Alert.alert('错误', '网络请求失败');
     } finally {
@@ -133,19 +171,17 @@ export default function SubscriptionScreen() {
   const handlePurchaseMultiStore = async () => {
     setOrdering(true);
     try {
-      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/create-order`, {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/purchase-multi-store`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_type: 'pro', period, item: 'multi-store' }),
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (!res.ok) {
         Alert.alert('下单失败', data.error || '请稍后重试');
         return;
       }
-      setPaymentInfo(data.data);
-      setShowAlipay(true);
-      setPaymentModalVisible(true);
+      openPaymentModal(data.data, 'confirm-multi-store');
     } catch {
       Alert.alert('错误', '网络请求失败');
     } finally {
@@ -154,10 +190,13 @@ export default function SubscriptionScreen() {
   };
 
   const handleConfirmPayment = async () => {
-    if (!paymentInfo) return;
+    if (!paymentInfo?.order_id) {
+      Alert.alert('错误', '订单信息缺失，请重新下单');
+      return;
+    }
     setConfirming(true);
     try {
-      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/confirm-payment`, {
+      const res = await authFetch(`${EXPO_PUBLIC_BACKEND_BASE_URL}/api/v1/subscriptions/${confirmEndpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order_id: paymentInfo.order_id }),
@@ -166,7 +205,7 @@ export default function SubscriptionScreen() {
       if (res.ok) {
         setPaymentModalVisible(false);
         setPaymentInfo(null);
-        Alert.alert('开通成功', '已成功开通！');
+        Alert.alert('开通成功', data?.data?.message || '已成功开通！');
         fetchAll();
       } else {
         Alert.alert('激活失败', data.error || '请联系管理员手动开通');
@@ -338,7 +377,7 @@ export default function SubscriptionScreen() {
                     {sub.plan_type !== 'pro' && (
                       <TouchableOpacity
                         className="bg-indigo-600 px-4 py-1.5 rounded-lg"
-                        onPress={() => handleUpgrade(sub.id)}
+                        onPress={() => handleUpgradeSubAccount(sub.id)}
                         disabled={ordering}
                       >
                         <Text className="text-white text-xs font-medium">帮升级</Text>
@@ -442,13 +481,37 @@ export default function SubscriptionScreen() {
 
                 {/* QR Code or instructions */}
                 <View className="items-center py-4">
-                  <View className="bg-gray-100 w-40 h-40 rounded-xl items-center justify-center mb-3">
-                    <FontAwesome6 name="qrcode" size={60} color="#4F46E5" />
-                  </View>
+                  {(() => {
+                    const qrUrl = showAlipay ? paymentInfo?.alipay_qrcode_url : paymentInfo?.wechat_qrcode_url;
+                    if (qrUrl) {
+                      return (
+                        <Image
+                          source={{ uri: qrUrl }}
+                          className="w-40 h-40 rounded-xl mb-3"
+                          resizeMode="contain"
+                        />
+                      );
+                    }
+                    return (
+                      <View className="bg-gray-100 w-40 h-40 rounded-xl items-center justify-center mb-3 px-4">
+                        <FontAwesome6 name="qrcode" size={48} color="#9CA3AF" />
+                        <Text className="text-xs text-gray-400 text-center mt-2">收款码未配置</Text>
+                      </View>
+                    );
+                  })()}
                   <Text className="text-xs text-gray-500 text-center leading-5">
-                    请使用{showAlipay ? '支付宝' : '微信'}扫码支付{paymentInfo?.note || ''}
+                    请使用{showAlipay ? '支付宝' : '微信'}扫码支付{paymentInfo?.note ? `（${paymentInfo.note}）` : ''}
                   </Text>
+                  {!showAlipay && !paymentInfo?.wechat_qrcode_url && (
+                    <Text className="text-xs text-red-400 mt-1">微信收款码未配置，请尝试支付宝或联系管理员</Text>
+                  )}
+                  {showAlipay && !paymentInfo?.alipay_qrcode_url && (
+                    <Text className="text-xs text-red-400 mt-1">支付宝收款码未配置，请尝试微信或联系管理员</Text>
+                  )}
                   <Text className="text-xs text-gray-400 mt-2">支付后请点击下方确认按钮</Text>
+                  {paymentInfo?.contact_info ? (
+                    <Text className="text-xs text-gray-400 mt-1">{paymentInfo.contact_info}</Text>
+                  ) : null}
                 </View>
 
                 <TouchableOpacity
