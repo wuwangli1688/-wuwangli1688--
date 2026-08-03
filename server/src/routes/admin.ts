@@ -1,24 +1,93 @@
-import { Router } from 'express';
-import type { Request, Response } from 'express';
-import { adminAuthMiddleware, createAdminToken, verifyAdminCredentials } from '../middleware/admin-auth.js';
-import { queryAll, queryOne, queryCount, execute, decodeDisplayName, syncAllData } from '../storage/database/direct-connection.js';
+import express, { type Request, type Response, Router } from 'express';
+import jwt from 'jsonwebtoken';
+import { adminAuthMiddleware } from '../middleware/admin-auth.js';
+import {
+  getPool,
+  queryAll,
+  queryOne,
+  queryCount,
+  execute,
+  decodeDisplayName,
+  syncAllData,
+} from '../storage/database/direct-connection.js';
+import { createClient } from '@supabase/supabase-js';
 
-/** 根据邮箱域名判断注册来源 */
-function getRegisterSource(email: string, dbSource?: string | null): string {
-  if (email && email.includes('@wechat.local')) return '微信小程序';
-  if (dbSource) return dbSource;
-  if (!email) return 'App';
-  return 'App';
+const router = express.Router();
+const adminLoginRouter = express.Router();
+
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin888';
+const JWT_SECRET = process.env.JWT_SECRET || 'default-admin-jwt-secret-change-me';
+
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabase = supabaseUrl && supabaseServiceKey ? createClient(supabaseUrl, supabaseServiceKey) : null;
+
+function formatDate(date: string | Date | null | undefined): string {
+  if (!date) return '-';
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '-';
+  }
 }
 
-/** ==================== 管理员登录路由（无需鉴权） ==================== */
-export const adminLoginRouter = Router();
+function formatMoney(amount: number | string | null | undefined): string {
+  if (amount === null || amount === undefined || amount === '') return '-';
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (isNaN(num)) return '-';
+  return `¥${num.toFixed(2)}`;
+}
 
-const LOGIN_HTML = `<!DOCTYPE html>
+function escapeHtml(text: string | number | null | undefined): string {
+  if (text === null || text === undefined) return '';
+  const str = String(text);
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Generate admin JWT token
+function generateAdminToken(): string {
+  const now = Date.now();
+  const payload = {
+    role: 'admin',
+    timestamp: now,
+    exp: Math.floor(now / 1000) + 24 * 60 * 60,
+  };
+  return jwt.sign(payload, JWT_SECRET);
+}
+
+// Login endpoint
+adminLoginRouter.post('/login', (req: Request, res: Response) => {
+  const { username, password } = req.body || {};
+
+  if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+    res.status(401).json({ error: '用户名或密码错误' });
+    return;
+  }
+
+  const token = generateAdminToken();
+  res.json({ token });
+});
+
+// Login page HTML
+const loginHtml = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>开发者后台登录</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -31,1209 +100,2167 @@ const LOGIN_HTML = `<!DOCTYPE html>
       justify-content: center;
       padding: 20px;
     }
-    .card {
-      background: #fff;
+    .login-card {
+      background: white;
       border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      padding: 40px;
       width: 100%;
       max-width: 420px;
-      padding: 40px 32px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
     }
-    h1 {
-      text-align: center;
+    .login-title {
       font-size: 24px;
+      font-weight: 700;
       color: #1f2937;
+      text-align: center;
       margin-bottom: 8px;
     }
-    .subtitle {
+    .login-subtitle {
       text-align: center;
       color: #6b7280;
+      margin-bottom: 32px;
       font-size: 14px;
-      margin-bottom: 28px;
     }
-    .field { margin-bottom: 18px; }
-    label {
+    .form-group { margin-bottom: 20px; }
+    .form-label {
       display: block;
-      font-size: 13px;
-      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 500;
       color: #374151;
-      margin-bottom: 6px;
     }
-    input {
+    .form-input {
       width: 100%;
-      padding: 12px 14px;
+      padding: 12px 16px;
       border: 1px solid #d1d5db;
       border-radius: 10px;
       font-size: 15px;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
-    input:focus {
+    .form-input:focus {
       outline: none;
       border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
     }
-    button {
+    .login-btn {
       width: 100%;
-      padding: 13px;
+      padding: 14px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
       border: none;
       border-radius: 10px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #fff;
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
+      transition: transform 0.1s, box-shadow 0.2s;
     }
-    button:hover { opacity: 0.92; }
-    button:active { transform: translateY(1px); }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    .error {
-      margin-top: 14px;
-      padding: 10px 12px;
-      background: #fee2e2;
-      color: #991b1b;
-      border-radius: 8px;
-      font-size: 13px;
+    .login-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.35);
+    }
+    .login-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .error-msg {
+      color: #dc2626;
+      font-size: 14px;
+      margin-top: 12px;
+      text-align: center;
       display: none;
     }
-    .error.show { display: block; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>开发者后台</h1>
-    <p class="subtitle">请使用管理员账号登录</p>
+  <div class="login-card">
+    <div class="login-title">开发者后台</div>
+    <div class="login-subtitle">Ledger Admin Dashboard</div>
     <form id="loginForm">
-      <div class="field">
-        <label for="username">用户名</label>
-        <input id="username" name="username" type="text" placeholder="请输入用户名" autocomplete="username" required />
+      <div class="form-group">
+        <label class="form-label">用户名</label>
+        <input type="text" class="form-input" id="username" placeholder="请输入用户名" required>
       </div>
-      <div class="field">
-        <label for="password">密码</label>
-        <input id="password" name="password" type="password" placeholder="请输入密码" autocomplete="current-password" required />
+      <div class="form-group">
+        <label class="form-label">密码</label>
+        <input type="password" class="form-input" id="password" placeholder="请输入密码" required>
       </div>
-      <button type="submit" id="submitBtn">登 录</button>
-      <div id="error" class="error"></div>
+      <button type="submit" class="login-btn" id="submitBtn">登录</button>
+      <div class="error-msg" id="errorMsg"></div>
     </form>
   </div>
+
   <script>
-    (function() {
-      var form = document.getElementById('loginForm');
-      var errorEl = document.getElementById('error');
-      var submitBtn = document.getElementById('submitBtn');
-      form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        errorEl.className = 'error';
-        submitBtn.disabled = true;
-        submitBtn.textContent = '登录中...';
-        var username = document.getElementById('username').value.trim();
-        var password = document.getElementById('password').value;
-        fetch('login', {
+    const form = document.getElementById('loginForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const errorMsg = document.getElementById('errorMsg');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      submitBtn.textContent = '登录中...';
+      errorMsg.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/v1/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: username, password: password })
-        })
-        .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
-        .then(function(result) {
-          if (!result.ok) throw new Error(result.data.error || '登录失败');
-          localStorage.setItem('admin_token', result.data.token);
-          window.location.href = 'dashboard';
-        })
-        .catch(function(err) {
-          errorEl.textContent = err.message || '登录失败，请重试';
-          errorEl.className = 'error show';
-          submitBtn.disabled = false;
-          submitBtn.textContent = '登 录';
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value
+          })
         });
-      });
-    })();
-  </script>
-</body>
-</html>`;
+        const data = await res.json();
 
-const DASHBOARD_HTML = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>开发者后台</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background: #f3f4f6;
-      color: #1f2937;
-      min-height: 100vh;
-    }
-    .topbar {
-      background: #fff;
-      border-bottom: 1px solid #e5e7eb;
-      padding: 14px 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-    .topbar h1 { font-size: 18px; font-weight: 700; }
-    .topbar-actions { display: flex; gap: 10px; }
-    .btn {
-      padding: 8px 16px;
-      border-radius: 8px;
-      border: 1px solid #d1d5db;
-      background: #fff;
-      color: #374151;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .btn:hover { background: #f9fafb; }
-    .btn-primary {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #fff;
-      border: none;
-    }
-    .btn-primary:hover { opacity: 0.92; }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .container { padding: 24px; max-width: 1400px; margin: 0 auto; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
-    .stat-card {
-      background: #fff;
-      border-radius: 12px;
-      padding: 18px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-    }
-    .stat-label { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
-    .stat-value { font-size: 24px; font-weight: 700; color: #111827; }
-    .panel {
-      background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-      padding: 20px;
-    }
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-    .panel-title { font-size: 16px; font-weight: 700; }
-    .search-box {
-      display: flex;
-      gap: 8px;
-    }
-    .search-box input {
-      padding: 8px 12px;
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
-      font-size: 13px;
-      min-width: 220px;
-    }
-    .search-box input:focus { outline: none; border-color: #667eea; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #f3f4f6; }
-    th { color: #6b7280; font-weight: 600; background: #f9fafb; }
-    tr:hover { background: #f9fafb; }
-    .tag {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-    }
-    .tag-parent { background: #dbeafe; color: #1e40af; }
-    .tag-child { background: #fce7f3; color: #9d174d; }
-    .tag-pro { background: #d1fae5; color: #065f46; }
-    .tag-free { background: #f3f4f6; color: #4b5563; }
-    .stores { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #6b7280; }
-    .empty { text-align: center; padding: 48px; color: #9ca3af; }
-    .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 16px; }
-    .pagination button { width: auto; padding: 6px 12px; }
-    .pagination span { font-size: 13px; color: #6b7280; }
-    .children-row { background: #fafafa; }
-    .children-cell { padding: 12px 12px 12px 48px; }
-    .child-list { margin: 0; padding-left: 16px; color: #4b5563; }
-    .child-list li { margin-bottom: 6px; }
-    .link { color: #667eea; cursor: pointer; text-decoration: underline; }
-    .loading { text-align: center; padding: 40px; color: #6b7280; }
-    .toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: #1f2937;
-      color: #fff;
-      padding: 12px 18px;
-      border-radius: 10px;
-      font-size: 13px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      display: none;
-      z-index: 100;
-    }
-    .toast.show { display: block; }
-    @media (max-width: 768px) {
-      .container { padding: 12px; }
-      .stats { grid-template-columns: repeat(2, 1fr); }
-      table { min-width: 800px; }
-      .table-wrap { overflow-x: auto; }
-      .topbar { padding: 12px 16px; }
-      .search-box input { min-width: 140px; }
-    }
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <h1>开发者后台</h1>
-    <div class="topbar-actions">
-      <button class="btn btn-primary" id="syncBtn" onclick="syncData()">同步数据</button>
-      <button class="btn" onclick="logout()">退出登录</button>
-    </div>
-  </div>
-  <div class="container">
-    <div class="stats" id="stats"></div>
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">用户列表</div>
-        <div class="search-box">
-          <input id="searchInput" type="text" placeholder="搜索账号 / 显示名" onkeydown="if(event.key==='Enter')loadUsers(1)" />
-          <button class="btn" onclick="loadUsers(1)">搜索</button>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>登录账号</th>
-              <th>显示名</th>
-              <th>角色</th>
-              <th>店铺</th>
-              <th>套餐</th>
-              <th>交易数</th>
-              <th>注册来源</th>
-              <th>注册时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="usersTable"></tbody>
-        </table>
-      </div>
-      <div id="loading" class="loading" style="display:none;">加载中...</div>
-      <div id="empty" class="empty" style="display:none;">暂无数据</div>
-      <div class="pagination" id="pagination"></div>
-    </div>
-  </div>
-  <div id="toast" class="toast"></div>
-  <script>
-    var API_BASE = '';
-    var currentPage = 1;
-    var expandedRows = {};
-
-    function getToken() { return localStorage.getItem('admin_token') || ''; }
-    function authHeaders() { return { 'x-admin-token': getToken(), 'Content-Type': 'application/json' }; }
-    function showToast(msg) {
-      var el = document.getElementById('toast');
-      el.textContent = msg;
-      el.className = 'toast show';
-      setTimeout(function() { el.className = 'toast'; }, 2500);
-    }
-    function api(path, opts) {
-      opts = opts || {};
-      opts.headers = Object.assign({}, opts.headers || {}, authHeaders());
-      return fetch(API_BASE + path, opts).then(function(r) {
-        return r.json().then(function(data) {
-          if (!r.ok) throw new Error(data.error || '请求失败');
-          return data;
-        });
-      });
-    }
-    function formatDate(d) {
-      if (!d) return '-';
-      var date = new Date(d);
-      return date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0');
-    }
-    function loadStats() {
-      api('dashboard-data').then(function(data) {
-        var html = '';
-        var items = [
-          { label: '总用户', value: data.totalUsers },
-          { label: '主账号', value: data.parentUsers },
-          { label: '子账号', value: data.childUsers },
-          { label: '活跃用户', value: data.totalActive },
-          { label: '今日活跃', value: data.todayActive },
-          { label: '本周活跃', value: data.weekActive },
-          { label: '总收入', value: '¥' + (data.totalRevenue || 0).toFixed(2) },
-          { label: '本月收入', value: '¥' + (data.thisMonthRevenue || 0).toFixed(2) },
-          { label: '订单数', value: data.totalOrders },
-          { label: '已付款', value: data.paidOrders },
-          { label: 'Pro用户', value: data.proCount },
-          { label: '反馈数', value: data.feedbackCount }
-        ];
-        items.forEach(function(item) {
-          html += '<div class="stat-card"><div class="stat-label">' + item.label + '</div><div class="stat-value">' + item.value + '</div></div>';
-        });
-        document.getElementById('stats').innerHTML = html;
-      }).catch(function(err) {
-        console.error(err);
-        if (err.message && err.message.indexOf('登录') > -1) logout();
-      });
-    }
-    function renderUsers(data) {
-      var tbody = document.getElementById('usersTable');
-      var empty = document.getElementById('empty');
-      var pagination = document.getElementById('pagination');
-      if (!data.users || data.users.length === 0) {
-        tbody.innerHTML = '';
-        empty.style.display = 'block';
-        pagination.innerHTML = '';
-        return;
-      }
-      empty.style.display = 'none';
-      var html = '';
-      data.users.forEach(function(u) {
-        var roleClass = u.role === 'parent' ? 'tag-parent' : 'tag-child';
-        var roleText = u.role === 'parent' ? '主账号' : '子账号';
-        var plan = (u.subscription && u.subscription.plan_type) || 'free';
-        var planClass = plan === 'pro' ? 'tag-pro' : 'tag-free';
-        var planText = plan === 'pro' ? 'Pro' : 'Free';
-        var stores = u.storeNames || '-';
-        html += '<tr>';
-        html += '<td>' + (u.login_name || '-') + '</td>';
-        html += '<td>' + (u.display_name || '-') + '</td>';
-        html += '<td><span class="tag ' + roleClass + '">' + roleText + '</span></td>';
-        html += '<td class="stores" title="' + stores.replace(/"/g, '&quot;') + '">' + stores + '</td>';
-        html += '<td><span class="tag ' + planClass + '">' + planText + '</span></td>';
-        html += '<td>' + (u.txCount || 0) + '</td>';
-        html += '<td>' + (u.register_source || '-') + '</td>';
-        html += '<td>' + formatDate(u.created_at) + '</td>';
-        html += '<td>';
-        if (u.role === 'parent' && u.children && u.children.length > 0) {
-          html += '<span class="link" onclick="toggleChildren(\'' + u.id + '\')">' + (expandedRows[u.id] ? '收起子账号' : '查看子账号(' + u.children.length + ')') + '</span>';
+        if (res.ok && data.token) {
+          localStorage.setItem('adminToken', data.token);
+          window.location.href = '/api/v1/admin/dashboard';
         } else {
-          html += '-';
+          throw new Error(data.error || '登录失败');
         }
-        html += '</td>';
-        html += '</tr>';
-        if (u.role === 'parent' && u.children && u.children.length > 0) {
-          var show = expandedRows[u.id] ? 'table-row' : 'none';
-          html += '<tr class="children-row" id="child-row-' + u.id + '" style="display:' + show + ';">';
-          html += '<td colspan="9" class="children-cell">';
-          html += '<ul class="child-list">';
-          u.children.forEach(function(c) {
-            html += '<li><strong>' + (c.login_name || '-') + '</strong> · ' + (c.display_name || '-') + ' · ' + formatDate(c.created_at) + '</li>';
-          });
-          html += '</ul></td></tr>';
-        }
-      });
-      tbody.innerHTML = html;
-
-      var phtml = '';
-      if (data.totalPages > 1) {
-        phtml += '<button class="btn" onclick="loadUsers(' + (currentPage - 1) + ')" ' + (currentPage <= 1 ? 'disabled' : '') + '>上一页</button>';
-        phtml += '<span>第 ' + currentPage + ' / ' + data.totalPages + ' 页，共 ' + data.total + ' 条</span>';
-        phtml += '<button class="btn" onclick="loadUsers(' + (currentPage + 1) + ')" ' + (currentPage >= data.totalPages ? 'disabled' : '') + '>下一页</button>';
-      } else if (data.total > 0) {
-        phtml += '<span>共 ' + data.total + ' 条</span>';
+      } catch (err) {
+        errorMsg.textContent = err.message;
+        errorMsg.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = '登录';
       }
-      pagination.innerHTML = phtml;
-    }
-    function loadUsers(page) {
-      currentPage = page || 1;
-      var search = document.getElementById('searchInput').value.trim();
-      document.getElementById('loading').style.display = 'block';
-      document.getElementById('usersTable').innerHTML = '';
-      document.getElementById('empty').style.display = 'none';
-      document.getElementById('pagination').innerHTML = '';
-      var url = 'users?page=' + currentPage + '&limit=20';
-      if (search) url += '&search=' + encodeURIComponent(search);
-      api(url).then(function(data) {
-        document.getElementById('loading').style.display = 'none';
-        renderUsers(data);
-      }).catch(function(err) {
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('empty').style.display = 'block';
-        document.getElementById('empty').textContent = err.message || '加载失败';
-        if (err.message && err.message.indexOf('登录') > -1) logout();
-      });
-    }
-    function toggleChildren(id) {
-      expandedRows[id] = !expandedRows[id];
-      loadUsers(currentPage);
-    }
-    function syncData() {
-      var btn = document.getElementById('syncBtn');
-      btn.disabled = true;
-      btn.textContent = '同步中...';
-      api('sync-all', { method: 'POST' }).then(function(data) {
-        showToast(data.message || '同步完成');
-        loadStats();
-        loadUsers(1);
-      }).catch(function(err) {
-        showToast(err.message || '同步失败');
-        if (err.message && err.message.indexOf('登录') > -1) logout();
-      }).finally(function() {
-        btn.disabled = false;
-        btn.textContent = '同步数据';
-      });
-    }
-    function logout() {
-      localStorage.removeItem('admin_token');
-      window.location.href = 'login';
-    }
-    if (!getToken()) {
-      window.location.href = 'login';
-    } else {
-      loadStats();
-      loadUsers(1);
-    }
+    });
   </script>
 </body>
 </html>`;
 
-// 登录页 HTML（无需鉴权）
 adminLoginRouter.get('/login', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.send(LOGIN_HTML);
+  res.send(loginHtml);
 });
 
-// 仪表盘 HTML（无需鉴权，由前端 JS 自行携带 token 调用数据接口）
 adminLoginRouter.get('/dashboard', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.send(DASHBOARD_HTML);
+  res.send(dashboardHtml);
 });
 
-// 登录接口
-adminLoginRouter.post('/login', (req: Request, res: Response) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    res.status(400).json({ error: '请输入用户名和密码' });
-    return;
-  }
+// ===================== Admin API Router =====================
 
-  if (!verifyAdminCredentials(username, password)) {
-    res.status(401).json({ error: '用户名或密码错误' });
-    return;
-  }
-
-  const token = createAdminToken();
-  res.json({ token, username: 'admin' });
-});
-
-/** ==================== 以下路由需要管理员身份验证 ==================== */
-const router = Router();
-router.use(adminAuthMiddleware);
-
-/** ==================== 仪表盘 ==================== */
+// Dashboard statistics
 router.get('/dashboard-data', async (req: Request, res: Response) => {
   try {
-    const totalUsers = await queryCount('SELECT count(*) FROM auth.users');
-    const parentUsers = await queryCount("SELECT count(*) FROM auth.users a LEFT JOIN user_profiles u ON a.id = u.id WHERE (u.role IS NULL OR u.role = 'parent')");
-    const childUsers = await queryCount("SELECT count(*) FROM user_profiles WHERE role = 'child'");
-    const totalActive = await queryCount('SELECT count(DISTINCT user_id) FROM transactions');
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayActive = await queryCount(
-      'SELECT count(DISTINCT user_id) FROM transactions WHERE created_at >= $1',
-      [today.toISOString()]
-    );
-
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekActive = await queryCount(
-      'SELECT count(DISTINCT user_id) FROM transactions WHERE created_at >= $1',
-      [weekAgo.toISOString()]
-    );
-
-    const subs = await queryAll('SELECT plan_type FROM subscriptions');
-    const proCount = subs.filter((s: any) => s.plan_type === 'pro').length;
-    const freeCount = subs.filter((s: any) => s.plan_type === 'free').length;
-
-    const orders = await queryAll('SELECT amount, status, created_at FROM subscription_orders');
-    const totalRevenue = orders.reduce((sum: number, o: any) => sum + (o.status === 'paid' ? parseFloat(o.amount) : 0), 0);
-    const now = new Date();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const thisMonthRevenue = orders
-      .filter((o: any) => o.status === 'paid' && o.created_at >= firstDayOfMonth)
-      .reduce((sum: number, o: any) => sum + parseFloat(o.amount), 0);
-
-    const totalOrders = orders.length;
-    const paidOrders = orders.filter((o: any) => o.status === 'paid').length;
-    const feedbackCount = await queryCount('SELECT count(*) FROM feedback');
+    const [
+      userStats,
+      storeStats,
+      transactionStats,
+      subscriptionStats,
+      feedbackStats,
+      orderStats,
+      versionStats,
+      logStats,
+      activeToday,
+      revenueStats,
+    ] = await Promise.all([
+      queryOne<{ total: string; owners: string; members: string }>(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE role = 'owner') as owners,
+          COUNT(*) FILTER (WHERE role = 'member') as members
+        FROM user_profiles
+      `),
+      queryOne<{ total: string }>(`SELECT COUNT(*) as total FROM stores`),
+      queryOne<{ total: string; income: string; expense: string }>(`
+        SELECT 
+          COUNT(*) as total,
+          COALESCE(SUM(amount) FILTER (WHERE type = 'income'), 0) as income,
+          COALESCE(SUM(amount) FILTER (WHERE type = 'expense'), 0) as expense
+        FROM transactions
+      `),
+      queryOne<{ total: string; pro: string; free: string }>(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'active' AND plan_type = 'pro') as pro,
+          COUNT(*) FILTER (WHERE status = 'active' AND plan_type = 'free') as free
+        FROM subscriptions
+      `),
+      queryOne<{ total: string }>(`
+        SELECT COUNT(*) as total FROM feedback
+      `),
+      queryOne<{ total: string; paid: string; amount: string }>(`
+        SELECT 
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'paid') as paid,
+          COALESCE(SUM(amount) FILTER (WHERE status = 'paid'), 0) as amount
+        FROM subscription_orders
+      `),
+      queryOne<{ total: string; latest: string }>(`
+        SELECT COUNT(*) as total, MAX(created_at) as latest FROM app_versions
+      `),
+      queryOne<{ total: string }>(`SELECT COUNT(*) as total FROM activity_logs`),
+      queryOne<{ count: string }>(`
+        SELECT COUNT(DISTINCT user_id) as count 
+        FROM activity_logs 
+        WHERE created_at >= NOW() - INTERVAL '24 hours'
+      `),
+      queryOne<{ today: string; month: string }>(`
+        SELECT 
+          COALESCE(SUM(amount) FILTER (WHERE status = 'paid' AND created_at >= CURRENT_DATE), 0) as today,
+          COALESCE(SUM(amount) FILTER (WHERE status = 'paid' AND created_at >= DATE_TRUNC('month', CURRENT_DATE)), 0) as month
+        FROM subscription_orders
+      `),
+    ]);
 
     res.json({
-      totalUsers,
-      parentUsers,
-      childUsers,
-      totalActive,
-      todayActive,
-      weekActive,
-      proCount,
-      freeCount,
-      totalRevenue,
-      thisMonthRevenue,
-      totalOrders,
-      paidOrders,
-      feedbackCount,
+      totalUsers: parseInt(userStats?.total || '0', 10),
+      ownerCount: parseInt(userStats?.owners || '0', 10),
+      memberCount: parseInt(userStats?.members || '0', 10),
+      storeCount: parseInt(storeStats?.total || '0', 10),
+      transactionCount: parseInt(transactionStats?.total || '0', 10),
+      totalIncome: parseFloat(transactionStats?.income || '0'),
+      totalExpense: parseFloat(transactionStats?.expense || '0'),
+      subscriptionCount: parseInt(subscriptionStats?.total || '0', 10),
+      proCount: parseInt(subscriptionStats?.pro || '0', 10),
+      freeCount: parseInt(subscriptionStats?.free || '0', 10),
+      feedbackCount: parseInt(feedbackStats?.total || '0', 10),
+      orderCount: parseInt(orderStats?.total || '0', 10),
+      paidOrderCount: parseInt(orderStats?.paid || '0', 10),
+      orderRevenue: parseFloat(orderStats?.amount || '0'),
+      appVersionCount: parseInt(versionStats?.total || '0', 10),
+      latestVersion: versionStats?.latest || null,
+      activityLogCount: parseInt(logStats?.total || '0', 10),
+      activeUsersToday: parseInt(activeToday?.count || '0', 10),
+      revenueToday: parseFloat(revenueStats?.today || '0'),
+      revenueThisMonth: parseFloat(revenueStats?.month || '0'),
     });
   } catch (error) {
-    console.error('获取仪表盘数据失败:', error);
-    res.status(500).json({ error: '获取仪表盘数据失败' });
+    console.error('Dashboard data error:', error);
+    res.status(500).json({ error: '获取仪表盘数据失败', detail: String(error) });
   }
 });
 
-/** ==================== 用户列表 ==================== */
+// Users list with pagination, search, filters
 router.get('/users', async (req: Request, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const search = req.query.search as string || '';
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
     const offset = (page - 1) * limit;
+    const search = (req.query.search as string) || '';
+    const role = (req.query.role as string) || '';
+    const source = (req.query.source as string) || '';
 
-    let countSql = 'SELECT count(*) FROM auth.users';
-    let sql = `SELECT a.id,
-               COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
-               COALESCE(u.role, 'parent') AS role,
-               u.parent_user_id,
-               COALESCE(u.created_at, a.created_at) AS created_at,
-               SPLIT_PART(a.email, '@', 1) AS login_name,
-               a.email AS account_email,
-               COALESCE(u.platform, 'app') AS platform,
-               u.register_source
-               FROM auth.users a
-               LEFT JOIN user_profiles u ON a.id = u.id`;
-    const params: any[] = [];
-    const countParams: any[] = [];
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+    let paramIndex = 1;
 
     if (search) {
-      const whereClause = ` WHERE u.display_name ILIKE $1 OR a.email ILIKE $1 OR SPLIT_PART(a.email, '@', 1) ILIKE $1`;
-      sql += whereClause;
-      countSql += ` a LEFT JOIN user_profiles u ON a.id = u.id` + whereClause;
+      conditions.push(`(u.login_name ILIKE $${paramIndex} OR p.display_name ILIKE $${paramIndex})`);
       params.push(`%${search}%`);
-      countParams.push(`%${search}%`);
+      paramIndex++;
+    }
+    if (role) {
+      conditions.push(`p.role = $${paramIndex}`);
+      params.push(role);
+      paramIndex++;
+    }
+    if (source) {
+      conditions.push(`p.register_source = $${paramIndex}`);
+      params.push(source);
+      paramIndex++;
     }
 
-    sql += ' ORDER BY a.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
-    params.push(limit, offset);
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const countParams = params.slice();
 
-    const total = await queryCount(countSql, countParams);
-    const users = await queryAll(sql, params);
+    const countResult = await queryOne<{ total: string }>(`
+      SELECT COUNT(*) as total
+      FROM user_profiles p
+      LEFT JOIN auth.users u ON u.id = p.user_id
+      ${whereClause}
+    `, countParams);
 
-    const userIds = users.map((u: any) => u.id);
-    const enrichedUsers = await Promise.all(userIds.map(async (uid: string) => {
-      const [subRows, txCount, subAccountCount, storeCount,
-      storeNames, tags, lastTxDate] = await Promise.all([
-        queryOne('SELECT plan_type, status, expires_at, sub_account_limit, store_limit FROM subscriptions WHERE user_id = $1', [uid]),
-        queryCount('SELECT count(*) FROM transactions WHERE user_id = $1', [uid]),
-        queryCount('SELECT count(*) FROM user_profiles WHERE parent_user_id = $1', [uid]),
-        queryCount('SELECT count(*) FROM stores WHERE owner_id = $1', [uid]),
-        queryAll('SELECT name FROM stores WHERE owner_id = $1', [uid]),
-        queryAll('SELECT tag FROM user_tags WHERE user_id = $1', [uid]),
-        queryOne('SELECT MAX(created_at) as last_active FROM transactions WHERE user_id = $1', [uid]),
-      ]);
+    const queryParams = [...params, limit, offset];
+    const users = await queryAll<{
+      user_id: string;
+      login_name: string;
+      display_name: string;
+      role: string;
+      register_source: string;
+      created_at: string;
+      updated_at: string;
+      last_active_at: string;
+      subscription_status: string;
+      plan_type: string;
+      store_count: string;
+      transaction_count: string;
+    }>(`
+      SELECT 
+        p.user_id,
+        COALESCE(u.email, u.phone, '-') as login_name,
+        p.display_name,
+        p.role,
+        p.register_source,
+        p.created_at,
+        p.updated_at,
+        p.last_active_at,
+        s.status as subscription_status,
+        s.plan_type,
+        (SELECT COUNT(*) FROM stores WHERE owner_id = p.user_id) as store_count,
+        (SELECT COUNT(*) FROM transactions WHERE user_id = p.user_id) as transaction_count
+      FROM user_profiles p
+      LEFT JOIN auth.users u ON u.id = p.user_id
+      LEFT JOIN subscriptions s ON s.user_id = p.user_id
+      ${whereClause}
+      ORDER BY p.created_at DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+    `, queryParams);
 
-      const user = users.find((u: any) => u.id === uid);
-      return {
-        ...user,
-        display_name: decodeDisplayName(user.display_name),
-        login_name: decodeDisplayName(user.login_name),
-        subscription: subRows || { plan_type: 'free', status: 'active' },
-        txCount,
-        subAccountCount,
-        storeCount,
-        storeNames: (storeNames || []).map((s: any) => s.name).join(', '),
-        activity_index: txCount,
-        tags: (tags || []).map((t: any) => t.tag).join(','),
-        last_active: lastTxDate?.last_active || null,
-        register_source: getRegisterSource(user.account_email, user.register_source),
-      };
-    }));
-
-    const finalUsers = await Promise.all(enrichedUsers.map(async (u: any) => {
-      if (u.role === 'parent') {
-        const childProfiles = await queryAll(
-          `SELECT u.id, u.display_name, u.created_at, u.register_source,
-                  COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name,
-                  a.email AS account_email
-           FROM user_profiles u
-           LEFT JOIN auth.users a ON u.id = a.id
-           WHERE u.parent_user_id = $1`,
-          [u.id]
-        );
-
-        const childWithSubs = await Promise.all((childProfiles || []).map(async (child: any) => {
-          const childSub = await queryOne(
-            'SELECT plan_type, status, expires_at FROM subscriptions WHERE user_id = $1',
-            [child.id]
-          );
-          return {
-            ...child,
-            display_name: decodeDisplayName(child.display_name),
-            login_name: decodeDisplayName(child.login_name),
-            register_source: getRegisterSource(child.account_email || '', child.register_source),
-            subscription: childSub || { plan_type: 'free', status: 'active' }
-          };
-        }));
-
-        return { ...u, children: childWithSubs };
-      }
-      return u;
+    const formattedUsers = users.map(u => ({
+      ...u,
+      display_name: decodeDisplayName(u.display_name),
+      store_count: parseInt(u.store_count || '0', 10),
+      transaction_count: parseInt(u.transaction_count || '0', 10),
     }));
 
     res.json({
-      users: finalUsers,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      users: formattedUsers,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(countResult?.total || '0', 10),
+        totalPages: Math.ceil(parseInt(countResult?.total || '0', 10) / limit),
+      },
     });
   } catch (error) {
-    console.error('获取用户列表失败:', error);
-    res.status(500).json({ error: '获取用户列表失败' });
+    console.error('Users list error:', error);
+    res.status(500).json({ error: '获取用户列表失败', detail: String(error) });
   }
 });
 
-/** ==================== 编辑用户订阅 ==================== */
-router.put('/users/:id/subscription', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { plan_type, status } = req.body;
-
-    if (!plan_type || !['free', 'pro'].includes(plan_type)) {
-      res.status(400).json({ error: '请选择有效的套餐类型' });
-      return;
-    }
-
-    const existing = await queryOne('SELECT id FROM subscriptions WHERE user_id = $1', [id]);
-
-    if (existing) {
-      const updates: any = { plan_type, updated_at: new Date().toISOString() };
-      if (status) updates.status = status;
-      if (plan_type === 'pro') {
-        updates.expires_at = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-      }
-
-      await execute(
-        'UPDATE subscriptions SET plan_type = $1, status = $2, expires_at = $3, updated_at = $4 WHERE user_id = $5',
-        [updates.plan_type, updates.status || 'active', updates.expires_at || null, updates.updated_at, id]
-      );
-    } else {
-      await execute(
-        `INSERT INTO subscriptions (user_id, plan_type, status, sub_account_limit, store_limit, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          id,
-          plan_type,
-          status || 'active',
-          plan_type === 'pro' ? 999 : 0,
-          plan_type === 'pro' ? 999 : 1,
-          plan_type === 'pro' ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() : null,
-        ]
-      );
-    }
-
-    res.json({ success: true, message: '订阅已更新' });
-  } catch (error) {
-    console.error('更新订阅失败:', error);
-    res.status(500).json({ error: '更新订阅失败' });
-  }
-});
-
-/** ==================== 反馈列表 ==================== */
-router.get('/feedbacks', async (req: Request, res: Response) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
-
-    const total = await queryCount('SELECT count(*) FROM feedback');
-    const feedbacks = await queryAll(
-      'SELECT id, user_id, content, contact, created_at FROM feedback ORDER BY created_at DESC LIMIT $1 OFFSET $2',
-      [limit, offset]
-    );
-
-    const userIds = [...new Set(feedbacks.map((f: any) => f.user_id))];
-    let profiles: any[] = [];
-    if (userIds.length > 0) {
-      const placeholders = userIds.map((_, i) => `$${i + 1}`).join(',');
-      profiles = await queryAll(
-        `SELECT a.id, COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
-                SPLIT_PART(a.email, '@', 1) AS login_name
-         FROM auth.users a
-         LEFT JOIN user_profiles u ON a.id = u.id
-         WHERE a.id IN (${placeholders})`,
-        userIds
-      );
-    }
-
-    const profileMap = new Map(profiles.map((p: any) => [p.id, p]));
-    const enriched = feedbacks.map((f: any) => ({
-      ...f,
-      user_name: profileMap.get(f.user_id)?.display_name || '未知',
-      login_name: profileMap.get(f.user_id)?.login_name || '',
-    }));
-
-    res.json({
-      feedbacks: enriched,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    });
-  } catch (error) {
-    console.error('获取反馈列表失败:', error);
-    res.status(500).json({ error: '获取反馈列表失败' });
-  }
-});
-
-/** ==================== 订单列表 ==================== */
-router.get('/orders', async (req: Request, res: Response) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const status = req.query.status as string || '';
-    const offset = (page - 1) * limit;
-
-    let whereClause = '';
-    const params: any[] = [];
-    const countParams: any[] = [];
-
-    if (status) {
-      whereClause = ' WHERE status = $1';
-      params.push(status);
-      countParams.push(status);
-    }
-
-    const total = await queryCount(
-      `SELECT count(*) FROM subscription_orders${whereClause}`,
-      countParams
-    );
-
-    const orders = await queryAll(
-      `SELECT * FROM subscription_orders${whereClause} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, limit, offset]
-    );
-
-    const userIds = [...new Set(orders.map((o: any) => o.user_id))];
-    let profiles: any[] = [];
-    if (userIds.length > 0) {
-      const placeholders = userIds.map((_, i) => `$${i + 1}`).join(',');
-      profiles = await queryAll(
-        `SELECT a.id, COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
-                SPLIT_PART(a.email, '@', 1) AS login_name
-         FROM auth.users a
-         LEFT JOIN user_profiles u ON a.id = u.id
-         WHERE a.id IN (${placeholders})`,
-        userIds
-      );
-    }
-
-    const profileMap = new Map(profiles.map((p: any) => [p.id, p]));
-    const enriched = orders.map((o: any) => ({
-      ...o,
-      user_name: profileMap.get(o.user_id)?.display_name || '未知',
-      login_name: profileMap.get(o.user_id)?.login_name || '',
-    }));
-
-    res.json({
-      orders: enriched,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    });
-  } catch (error) {
-    console.error('获取订单列表失败:', error);
-    res.status(500).json({ error: '获取订单列表失败' });
-  }
-});
-
-/** ==================== 确认付款 ==================== */
-router.post('/orders/:id/confirm', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    const order = await queryOne('SELECT * FROM subscription_orders WHERE id = $1', [id]);
-
-    if (!order) {
-      res.status(404).json({ error: '订单不存在' });
-      return;
-    }
-
-    if (order.status === 'paid') {
-      res.json({ success: true, message: '该订单已确认付款' });
-      return;
-    }
-
-    await execute(
-      'UPDATE subscription_orders SET status = $1, paid_at = $2 WHERE id = $3',
-      ['paid', new Date().toISOString(), id]
-    );
-
-    const existingSub = await queryOne('SELECT id FROM subscriptions WHERE user_id = $1', [order.user_id]);
-
-    if (existingSub) {
-      await execute(
-        `UPDATE subscriptions SET plan_type = $1, status = $2, expires_at = $3,
-         sub_account_limit = $4, store_limit = $5, updated_at = $6
-         WHERE user_id = $7`,
-        ['pro', 'active', new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-         999, 999, new Date().toISOString(), order.user_id]
-      );
-    } else {
-      await execute(
-        `INSERT INTO subscriptions (user_id, plan_type, status, sub_account_limit, store_limit, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [order.user_id, 'pro', 'active', 999, 999,
-         new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()]
-      );
-    }
-
-    res.json({ success: true, message: '付款已确认，订阅已激活' });
-  } catch (error) {
-    console.error('确认付款失败:', error);
-    res.status(500).json({ error: '确认付款失败' });
-  }
-});
-
-/** ==================== 支付配置 ==================== */
-router.get('/payment-config', async (req: Request, res: Response) => {
-  try {
-    const data = await queryOne('SELECT * FROM payment_config LIMIT 1');
-    res.json(data || { alipay_qrcode_url: '', wechat_qrcode_url: '', contact_info: '' });
-  } catch (error) {
-    console.error('获取支付配置失败:', error);
-    res.status(500).json({ error: '获取支付配置失败' });
-  }
-});
-
-router.put('/payment-config', async (req: Request, res: Response) => {
-  try {
-    const { alipay_qrcode_url, wechat_qrcode_url, contact_info } = req.body;
-
-    const existing = await queryOne('SELECT id FROM payment_config LIMIT 1');
-
-    if (existing) {
-      await execute(
-        `UPDATE payment_config SET alipay_qrcode_url = $1, wechat_qrcode_url = $2,
-         contact_info = $3, updated_at = $4 WHERE id = $5`,
-        [alipay_qrcode_url || '', wechat_qrcode_url || '', contact_info || '', new Date().toISOString(), existing.id]
-      );
-    } else {
-      await execute(
-        `INSERT INTO payment_config (alipay_qrcode_url, wechat_qrcode_url, contact_info)
-         VALUES ($1, $2, $3)`,
-        [alipay_qrcode_url || '', wechat_qrcode_url || '', contact_info || '']
-      );
-    }
-
-    res.json({ success: true, message: '支付配置已更新' });
-  } catch (error) {
-    console.error('更新支付配置失败:', error);
-    res.status(500).json({ error: '更新支付配置失败' });
-  }
-});
-
-/** ==================== 搜索用户 ==================== */
-router.get('/users/search', async (req: Request, res: Response) => {
-  try {
-    const q = req.query.q as string || '';
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const offset = (page - 1) * limit;
-
-    if (!q) {
-      res.json({ users: [], total: 0 });
-      return;
-    }
-
-    const searchParam = `%${q}%`;
-    const total = await queryCount(
-      `SELECT count(*) FROM auth.users a
-       LEFT JOIN user_profiles u ON a.id = u.id
-       WHERE u.display_name ILIKE $1 OR a.email ILIKE $1 OR a.id::text ILIKE $1`,
-      [searchParam]
-    );
-
-    const users = await queryAll(
-      `SELECT a.id, COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
-              COALESCE(u.role, 'parent') AS role, u.parent_user_id,
-              COALESCE(u.created_at, a.created_at) AS created_at,
-              SPLIT_PART(a.email, '@', 1) AS login_name, a.email AS account_email,
-              COALESCE(u.platform, 'app') AS platform
-       FROM auth.users a
-       LEFT JOIN user_profiles u ON a.id = u.id
-       WHERE u.display_name ILIKE $1 OR a.email ILIKE $1 OR a.id::text ILIKE $1
-       ORDER BY a.created_at DESC LIMIT $2 OFFSET $3`,
-      [searchParam, limit, offset]
-    );
-
-    res.json({ users, total, page, limit, totalPages: Math.ceil(total / limit) });
-  } catch (error) {
-    console.error('搜索用户失败:', error);
-    res.status(500).json({ error: '搜索用户失败' });
-  }
-});
-
-// ==========================================
-// Display Name History Routes
-// ==========================================
-
-router.put('/users/:id/display-name', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { display_name } = req.body;
-
-    if (!display_name || display_name.trim().length === 0) {
-      res.status(400).json({ error: '显示名称不能为空' });
-      return;
-    }
-
-    const currentQuery = await queryOne('SELECT display_name FROM user_profiles WHERE id = $1', [id]);
-    const oldName = currentQuery?.display_name || '';
-
-    await execute('UPDATE user_profiles SET display_name = $1 WHERE id = $2', [display_name.trim(), id]);
-
-    if (currentQuery === null) {
-      await execute('INSERT INTO user_profiles (id, display_name, role) VALUES ($1, $2, $3) ON CONFLICT (id) DO UPDATE SET display_name = $2', [id, display_name.trim(), 'parent']);
-    }
-
-    await execute(
-      'INSERT INTO display_name_history (user_id, old_name, new_name) VALUES ($1, $2, $3)',
-      [id, oldName, display_name.trim()]
-    );
-
-    res.json({ success: true, display_name: display_name.trim() });
-  } catch (error) {
-    console.error('更新显示名称失败:', error);
-    res.status(500).json({ error: '更新显示名称失败' });
-  }
-});
-
-router.get('/users/:id/display-name-history', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const history = await queryAll(
-      'SELECT * FROM display_name_history WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
-      [id]
-    );
-    res.json({ history });
-  } catch (error) {
-    console.error('获取显示名称历史失败:', error);
-    res.status(500).json({ error: '获取显示名称历史失败' });
-  }
-});
-
-// ==========================================
-// User Tags Routes
-// ==========================================
-
-router.get('/users/:id/tags', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const tags = await queryAll('SELECT tag, created_at FROM user_tags WHERE user_id = $1 ORDER BY created_at', [id]);
-    res.json({ tags: tags.map(t => t.tag) });
-  } catch (error) {
-    console.error('获取用户标签失败:', error);
-    res.status(500).json({ error: '获取用户标签失败' });
-  }
-});
-
-router.post('/users/:id/tags', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { tag } = req.body;
-
-    if (!tag || tag.trim().length === 0) {
-      res.status(400).json({ error: '标签不能为空' });
-      return;
-    }
-
-    await execute(
-      'INSERT INTO user_tags (user_id, tag) VALUES ($1, $2) ON CONFLICT (user_id, tag) DO NOTHING',
-      [id, tag.trim()]
-    );
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('添加标签失败:', error);
-    res.status(500).json({ error: '添加标签失败' });
-  }
-});
-
-router.delete('/users/:id/tags/:tag', async (req, res) => {
-  try {
-    const { id, tag } = req.params;
-    await execute('DELETE FROM user_tags WHERE user_id = $1 AND tag = $2', [id, decodeURIComponent(tag)]);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('删除标签失败:', error);
-    res.status(500).json({ error: '删除标签失败' });
-  }
-});
-
-// ==========================================
-// Activity Logs Routes
-// ==========================================
-
-router.get('/users/:id/activity', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { page = '1', limit = '20' } = req.query;
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-
-    const totalResult = await queryOne('SELECT count(*) as count FROM activity_logs WHERE user_id = $1', [id]);
-    const total = parseInt(totalResult?.count || '0');
-
-    const logs = await queryAll(
-      'SELECT * FROM activity_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
-      [id, parseInt(limit as string), offset]
-    );
-
-    const txActivity = await queryAll(
-      'SELECT id, created_at, type, amount, note, category_id FROM transactions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20',
-      [id]
-    );
-    const txTotal = await queryOne('SELECT count(*) as count FROM transactions WHERE user_id = $1', [id]);
-
-    const activities = logs.map((l: any) => ({
-      created_at: l.created_at,
-      action: l.activity_type + (l.description ? ': ' + l.description : ''),
-      type: 'log'
-    }));
-
-    const txActivities = txActivity.map((t: any) => ({
-      created_at: t.created_at,
-      action: (t.type === 'income' ? '收入' : '支出') + ' ' + t.amount + '元' + (t.note ? ' (' + t.note + ')' : ''),
-      type: 'transaction'
-    }));
-
-    const allActivities = [...activities, ...txActivities].sort((a: any, b: any) => {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-
-    res.json({
-      activities: allActivities,
-      total: total + parseInt(txTotal?.count || '0'),
-      summary: { activity_logs: total, transactions: parseInt(txTotal?.count || '0') }
-    });
-  } catch (error) {
-    console.error('获取活动记录失败:', error);
-    res.status(500).json({ error: '获取活动记录失败' });
-  }
-});
-
-router.post('/activity/seed', async (req, res) => {
-  try {
-    const { user_id, activity_type = 'login', description = '测试活动' } = req.body;
-    await execute(
-      'INSERT INTO activity_logs (user_id, activity_type, description) VALUES ($1, $2, $3)',
-      [user_id, activity_type, description]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    console.error('创建活动记录失败:', error);
-    res.status(500).json({ error: '创建活动记录失败' });
-  }
-});
-
-/** ==================== 用户详情 ==================== */
+// User detail with stores
 router.get('/users/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-
-    const user = await queryOne(
-      `SELECT a.id,
-              COALESCE(u.display_name, SPLIT_PART(a.email, '@', 1), '未知') AS display_name,
-              COALESCE(u.role, 'parent') AS role,
-              u.parent_user_id,
-              COALESCE(u.created_at, a.created_at) AS created_at,
-              COALESCE(u.platform, 'app') AS platform,
-              u.register_source,
-              SPLIT_PART(a.email, '@', 1) AS login_name, a.email AS account_email
-       FROM auth.users a
-       LEFT JOIN user_profiles u ON a.id = u.id
-       WHERE a.id = $1`,
-      [id]
-    );
+    const userId = req.params.id;
+    const user = await queryOne<{
+      user_id: string;
+      login_name: string;
+      display_name: string;
+      role: string;
+      register_source: string;
+      created_at: string;
+      updated_at: string;
+      last_active_at: string;
+    }>(`
+      SELECT 
+        p.user_id,
+        COALESCE(u.email, u.phone, '-') as login_name,
+        p.display_name,
+        p.role,
+        p.register_source,
+        p.created_at,
+        p.updated_at,
+        p.last_active_at
+      FROM user_profiles p
+      LEFT JOIN auth.users u ON u.id = p.user_id
+      WHERE p.user_id = $1
+    `, [userId]);
 
     if (!user) {
       res.status(404).json({ error: '用户不存在' });
       return;
     }
 
-    const subscription = await queryOne(
-      'SELECT * FROM subscriptions WHERE user_id = $1',
-      [id]
-    );
+    const stores = await queryAll<{
+      id: string;
+      name: string;
+      address: string;
+      phone: string;
+      created_at: string;
+    }>(`
+      SELECT id, name, address, phone, created_at
+      FROM stores
+      WHERE owner_id = $1
+      ORDER BY created_at DESC
+    `, [userId]);
 
-    const txCount = await queryCount('SELECT count(*) FROM transactions WHERE user_id = $1', [id]);
-    const storeCount = await queryCount('SELECT count(*) FROM stores WHERE owner_id = $1', [id]);
-    const storeNames = (await queryAll('SELECT name FROM stores WHERE owner_id = $1', [id])).map((s: any) => s.name).join(', ');
+    const memberStores = await queryAll<{
+      id: string;
+      name: string;
+      role: string;
+      created_at: string;
+    }>(`
+      SELECT s.id, s.name, sp.role, sp.created_at
+      FROM store_permissions sp
+      JOIN stores s ON s.id = sp.store_id
+      WHERE sp.user_id = $1
+      ORDER BY sp.created_at DESC
+    `, [userId]);
 
-    const children = await queryAll(
-      `SELECT u.id, u.display_name, u.role, u.created_at,
-              COALESCE(SPLIT_PART(a.email, '@', 1), u.display_name, '未知') AS login_name,
-              a.email AS account_email
-       FROM user_profiles u
-       LEFT JOIN auth.users a ON u.id = a.id
-       WHERE u.parent_user_id = $1`,
-      [id]
-    );
+    const transactions = await queryAll<{
+      id: string;
+      amount: string;
+      type: string;
+      category_name: string;
+      transaction_date: string;
+      description: string;
+    }>(`
+      SELECT t.id, t.amount, t.type, c.name as category_name, t.date as transaction_date, t.note as description
+      FROM transactions t
+      LEFT JOIN categories c ON c.id = t.category_id
+      WHERE t.user_id = $1
+      ORDER BY t.date DESC
+      LIMIT 20
+    `, [userId]);
 
-    const orders = await queryAll(
-      'SELECT * FROM subscription_orders WHERE user_id = $1 ORDER BY created_at DESC',
-      [id]
-    );
+    const subscription = await queryOne<{
+      plan_type: string;
+      status: string;
+      started_at: string;
+      expires_at: string;
+    }>(`
+      SELECT plan_type, status, started_at, expires_at
+      FROM subscriptions
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `, [userId]);
 
-    const tags = await queryAll('SELECT tag FROM user_tags WHERE user_id = $1', [id]);
-    const lastActive = await queryOne(
-      'SELECT MAX(created_at) as last_active FROM transactions WHERE user_id = $1',
-      [id]
-    );
-    const subAccountCount = await queryCount('SELECT count(*) FROM user_profiles WHERE parent_user_id = $1', [id]);
-
-    const enrichedUser = {
+    res.json({
       ...user,
       display_name: decodeDisplayName(user.display_name),
-      login_name: decodeDisplayName(user.login_name),
-      register_source: getRegisterSource(user.account_email, user.register_source),
-      subscription: subscription || null,
-      txCount,
-      storeCount,
-      storeNames,
-      children: (children || []).map((c: any) => ({
-        ...c,
-        display_name: decodeDisplayName(c.display_name),
-        login_name: decodeDisplayName(c.login_name),
-        register_source: getRegisterSource(c.account_email || c.login_name || '', c.register_source),
-      })),
-      subAccountCount,
+      stores,
+      memberStores,
+      transactions,
+      subscription,
+    });
+  } catch (error) {
+    console.error('User detail error:', error);
+    res.status(500).json({ error: '获取用户详情失败', detail: String(error) });
+  }
+});
+
+// Transactions list
+router.get('/transactions', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const offset = (page - 1) * limit;
+    const search = (req.query.search as string) || '';
+    const type = (req.query.type as string) || '';
+
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+    let paramIndex = 1;
+
+    if (search) {
+      conditions.push(`(u.email ILIKE $${paramIndex} OR t.description ILIKE $${paramIndex})`);
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+    if (type) {
+      conditions.push(`t.type = $${paramIndex}`);
+      params.push(type);
+      paramIndex++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countResult = await queryOne<{ total: string }>(`
+      SELECT COUNT(*) as total
+      FROM transactions t
+      LEFT JOIN auth.users u ON u.id = t.user_id
+      ${whereClause}
+    `, params);
+
+    const queryParams = [...params, limit, offset];
+    const transactions = await queryAll<{
+      id: string;
+      user_id: string;
+      login_name: string;
+      amount: string;
+      type: string;
+      category_name: string;
+      store_name: string;
+      transaction_date: string;
+      description: string;
+      created_at: string;
+    }>(`
+      SELECT 
+        t.id,
+        t.user_id,
+        COALESCE(u.email, u.phone, '-') as login_name,
+        t.amount,
+        t.type,
+        c.name as category_name,
+        s.name as store_name,
+        t.date as transaction_date,
+        t.note AS description,
+        t.created_at
+      FROM transactions t
+      LEFT JOIN auth.users u ON u.id = t.user_id
+      LEFT JOIN categories c ON c.id = t.category_id
+      LEFT JOIN stores s ON s.id = t.store_id
+      ${whereClause}
+      ORDER BY t.date DESC, t.created_at DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+    `, queryParams);
+
+    res.json({
+      transactions,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(countResult?.total || '0', 10),
+        totalPages: Math.ceil(parseInt(countResult?.total || '0', 10) / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Transactions list error:', error);
+    res.status(500).json({ error: '获取交易记录失败', detail: String(error) });
+  }
+});
+
+// Stores list
+router.get('/stores', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const offset = (page - 1) * limit;
+
+    const countResult = await queryOne<{ total: string }>(`SELECT COUNT(*) as total FROM stores`);
+    const stores = await queryAll<{
+      id: string;
+      name: string;
+      notes: string;
+      owner_id: string;
+      login_name: string;
+      created_at: string;
+      member_count: string;
+      transaction_count: string;
+    }>(`
+      SELECT 
+        s.id, s.name, s.notes, s.owner_id,
+        COALESCE(u.email, u.phone, '-') as login_name,
+        s.created_at,
+        (SELECT COUNT(*) FROM store_permissions WHERE store_id = s.id) as member_count,
+        (SELECT COUNT(*) FROM transactions WHERE store_id = s.id) as transaction_count
+      FROM stores s
+      LEFT JOIN auth.users u ON u.id = s.owner_id
+      ORDER BY s.created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    res.json({
+      stores,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(countResult?.total || '0', 10),
+        totalPages: Math.ceil(parseInt(countResult?.total || '0', 10) / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Stores list error:', error);
+    res.status(500).json({ error: '获取店铺列表失败', detail: String(error) });
+  }
+});
+
+// Categories list
+router.get('/categories', async (req: Request, res: Response) => {
+  try {
+    const categories = await queryAll<{
+      id: string;
+      name: string;
+      type: string;
+      icon: string;
+      color: string;
+      sort_order: number;
+      created_at: string;
+      usage_count: string;
+    }>(`
+      SELECT
+        c.id, c.name, c.type, c.icon, c.color, c.sort_order, c.created_at,
+        (SELECT COUNT(*) FROM transactions WHERE category_id = c.id) as usage_count
+      FROM categories c
+      ORDER BY c.type, c.sort_order, c.name
+    `);
+
+    res.json({ categories });
+  } catch (error) {
+    console.error('Categories list error:', error);
+    res.status(500).json({ error: '获取分类列表失败', detail: String(error) });
+  }
+});
+
+// Subscriptions list
+router.get('/subscriptions', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const offset = (page - 1) * limit;
+
+    const countResult = await queryOne<{ total: string }>(`SELECT COUNT(*) as total FROM subscriptions`);
+    const subscriptions = await queryAll<{
+      id: string;
+      user_id: string;
+      login_name: string;
+      plan_type: string;
+      status: string;
+      started_at: string;
+      expires_at: string;
+      created_at: string;
+    }>(`
+      SELECT 
+        s.id, s.user_id,
+        COALESCE(u.email, u.phone, '-') as login_name,
+        s.plan_type, s.status, s.started_at, s.expires_at, s.created_at
+      FROM subscriptions s
+      LEFT JOIN auth.users u ON u.id = s.user_id
+      ORDER BY s.created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    res.json({
+      subscriptions,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(countResult?.total || '0', 10),
+        totalPages: Math.ceil(parseInt(countResult?.total || '0', 10) / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Subscriptions list error:', error);
+    res.status(500).json({ error: '获取订阅列表失败', detail: String(error) });
+  }
+});
+
+// Subscription orders list
+router.get('/subscription-orders', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const offset = (page - 1) * limit;
+    const status = (req.query.status as string) || '';
+
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+    let paramIndex = 1;
+
+    if (status) {
+      conditions.push(`so.status = $${paramIndex}`);
+      params.push(status);
+      paramIndex++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countResult = await queryOne<{ total: string }>(`
+      SELECT COUNT(*) as total
+      FROM subscription_orders so
+      ${whereClause}
+    `, params);
+
+    const queryParams = [...params, limit, offset];
+    const orders = await queryAll<{
+      id: string;
+      user_id: string;
+      login_name: string;
+      plan_type: string;
+      period: string;
+      amount: string;
+      status: string;
+      purchaser_id: string;
+      description: string;
+      created_at: string;
+      paid_at: string;
+      activated_at: string;
+    }>(`
+      SELECT
+        so.id, so.user_id,
+        COALESCE(u.email, u.phone, '-') as login_name,
+        so.plan_type, so.period, so.amount, so.status, so.purchaser_id,
+        so.description, so.created_at, so.paid_at, so.activated_at
+      FROM subscription_orders so
+      LEFT JOIN auth.users u ON u.id = so.user_id
+      ${whereClause}
+      ORDER BY so.created_at DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+    `, queryParams);
+
+    res.json({
       orders,
-      activity_index: txCount,
-      tags: (tags || []).map((t: any) => t.tag).join(','),
-      last_active: lastActive?.last_active || null,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(countResult?.total || '0', 10),
+        totalPages: Math.ceil(parseInt(countResult?.total || '0', 10) / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Orders list error:', error);
+    res.status(500).json({ error: '获取订单列表失败', detail: String(error) });
+  }
+});
+
+// Feedback list
+router.get('/feedback', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const offset = (page - 1) * limit;
+
+    const countResult = await queryOne<{ total: string }>(`SELECT COUNT(*) as total FROM feedback`);
+
+    const feedback = await queryAll<{
+      id: string;
+      user_id: string;
+      login_name: string;
+      content: string;
+      contact: string;
+      created_at: string;
+    }>(`
+      SELECT 
+        f.id, f.user_id,
+        COALESCE(u.email, u.phone, '-') as login_name,
+        f.content, f.contact, f.created_at
+      FROM feedback f
+      LEFT JOIN auth.users u ON u.id = f.user_id
+      ORDER BY f.created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    res.json({
+      feedback,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(countResult?.total || '0', 10),
+        totalPages: Math.ceil(parseInt(countResult?.total || '0', 10) / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Feedback list error:', error);
+    res.status(500).json({ error: '获取反馈列表失败', detail: String(error) });
+  }
+});
+
+// Activity logs list
+router.get('/activity-logs', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+    const offset = (page - 1) * limit;
+
+    const countResult = await queryOne<{ total: string }>(`SELECT COUNT(*) as total FROM activity_logs`);
+    const logs = await queryAll<{
+      id: string;
+      user_id: string;
+      login_name: string;
+      activity_type: string;
+      description: string;
+      created_at: string;
+    }>(`
+      SELECT 
+        al.id, al.user_id,
+        COALESCE(u.email, u.phone, '-') as login_name,
+        al.activity_type, al.description, al.created_at
+      FROM activity_logs al
+      LEFT JOIN auth.users u ON u.id = al.user_id
+      ORDER BY al.created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    res.json({
+      logs,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(countResult?.total || '0', 10),
+        totalPages: Math.ceil(parseInt(countResult?.total || '0', 10) / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Activity logs error:', error);
+    res.status(500).json({ error: '获取操作日志失败', detail: String(error) });
+  }
+});
+
+// App versions list
+router.get('/app-versions', async (req: Request, res: Response) => {
+  try {
+    const versions = await queryAll<{
+      id: string;
+      version: string;
+      min_version: string;
+      force_update: boolean;
+      release_notes: string;
+      download_url: string;
+      created_at: string;
+    }>(`
+      SELECT id, version, min_version, force_update, release_notes, download_url, created_at
+      FROM app_versions
+      ORDER BY created_at DESC
+    `);
+
+    res.json({ versions });
+  } catch (error) {
+    console.error('App versions error:', error);
+    res.status(500).json({ error: '获取应用版本失败', detail: String(error) });
+  }
+});
+
+// Payment config
+router.get('/payment-config', async (req: Request, res: Response) => {
+  try {
+    const config = await queryOne<{
+      id: string;
+      alipay_qrcode_url: string;
+      wechat_qrcode_url: string;
+      contact_info: string;
+      updated_at: string;
+    }>(`
+      SELECT id, alipay_qrcode_url, wechat_qrcode_url, contact_info, updated_at
+      FROM payment_config
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `);
+
+    if (!config) {
+      res.json({
+        id: null,
+        alipay_qrcode_url: '',
+        wechat_qrcode_url: '',
+        contact_info: '',
+        updated_at: null,
+      });
+      return;
+    }
+
+    res.json(config);
+  } catch (error) {
+    console.error('Payment config error:', error);
+    res.status(500).json({ error: '获取支付配置失败', detail: String(error) });
+  }
+});
+
+// Update payment config
+router.put('/payment-config', async (req: Request, res: Response) => {
+  try {
+    const { alipay_qrcode_url, wechat_qrcode_url, contact_info } = req.body || {};
+
+    const existing = await queryOne<{ id: string }>(`SELECT id FROM payment_config LIMIT 1`);
+
+    if (existing) {
+      await execute(
+        `
+          UPDATE payment_config
+          SET alipay_qrcode_url = $1, wechat_qrcode_url = $2, contact_info = $3, updated_at = NOW()
+          WHERE id = $4
+        `,
+        [alipay_qrcode_url || '', wechat_qrcode_url || '', contact_info || '', existing.id]
+      );
+    } else {
+      await execute(
+        `
+          INSERT INTO payment_config (alipay_qrcode_url, wechat_qrcode_url, contact_info)
+          VALUES ($1, $2, $3)
+        `,
+        [alipay_qrcode_url || '', wechat_qrcode_url || '', contact_info || '']
+      );
+    }
+
+    res.json({ success: true, message: '支付配置已更新' });
+  } catch (error) {
+    console.error('Update payment config error:', error);
+    res.status(500).json({ error: '更新支付配置失败', detail: String(error) });
+  }
+});
+
+// Sync all data
+router.post('/sync-all', async (req: Request, res: Response) => {
+  const results: Record<string, any> = {};
+  const startTime = Date.now();
+
+  try {
+    // 1. Sync users and activity logs
+    const syncResult = await syncAllData();
+    results.users = { synced: syncResult.usersSynced };
+    results.activityLogs = { created: syncResult.activityLogsCreated };
+
+    // 2. Sync display name history
+    try {
+      const historyResult = await queryOne<{ count: string }>(`
+        SELECT COUNT(*) as count FROM display_name_history
+      `);
+      results.displayNameHistory = { count: parseInt(historyResult?.count || '0', 10) };
+    } catch (e) {
+      results.displayNameHistory = { error: String(e) };
+    }
+
+    // 3. Sync default categories if missing
+    try {
+      const defaultCategories = await queryCount(`
+        SELECT COUNT(*) as count FROM categories
+      `);
+      results.defaultCategories = { count: defaultCategories };
+    } catch (e) {
+      results.defaultCategories = { error: String(e) };
+    }
+
+    // 4. Ensure payment config exists
+    try {
+      const paymentConfig = await queryOne<{ id: string }>(`SELECT id FROM payment_config LIMIT 1`);
+      if (!paymentConfig) {
+        await execute(
+          `INSERT INTO payment_config (alipay_qrcode_url, wechat_qrcode_url, contact_info) VALUES ($1, $2, $3)`,
+          ['', '', '']
+        );
+        results.paymentConfig = { created: true };
+      } else {
+        results.paymentConfig = { exists: true };
+      }
+    } catch (e) {
+      results.paymentConfig = { error: String(e) };
+    }
+
+    // 5. Refresh materialized views or caches if any
+    results.duration = Date.now() - startTime;
+
+    res.json({
+      success: true,
+      message: '数据同步完成',
+      results,
+    });
+  } catch (error) {
+    console.error('Sync all error:', error);
+    res.status(500).json({
+      success: false,
+      error: '数据同步失败',
+      detail: String(error),
+      results,
+    });
+  }
+});
+
+// ===================== Dashboard HTML =====================
+
+const dashboardHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>开发者后台</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #667eea;
+      --primary-dark: #5a67d8;
+      --secondary: #764ba2;
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --text: #1f2937;
+      --text-muted: #6b7280;
+      --border: #e5e7eb;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+      color: white;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+    }
+    .header-title {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary {
+      background: white;
+      color: var(--primary);
+    }
+    .btn-primary:hover { background: #f9fafb; }
+    .btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
+    .btn-outline {
+      background: transparent;
+      color: white;
+      border: 1px solid rgba(255,255,255,0.5);
+    }
+    .btn-outline:hover { background: rgba(255,255,255,0.1); }
+    .container {
+      display: flex;
+      min-height: calc(100vh - 64px);
+    }
+    .sidebar {
+      width: 220px;
+      background: var(--card);
+      border-right: 1px solid var(--border);
+      padding: 16px 0;
+      overflow-y: auto;
+    }
+    .nav-item {
+      padding: 12px 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      transition: all 0.15s;
+      border-left: 3px solid transparent;
+    }
+    .nav-item:hover {
+      background: #f9fafb;
+      color: var(--text);
+    }
+    .nav-item.active {
+      background: #eef2ff;
+      color: var(--primary);
+      border-left-color: var(--primary);
+      font-weight: 500;
+    }
+    .nav-icon { width: 20px; text-align: center; }
+    .main {
+      flex: 1;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      border: 1px solid var(--border);
+    }
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stat-change {
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      border: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .search-input {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      min-width: 240px;
+    }
+    .search-input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .select {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      background: white;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    tr:hover { background: #f9fafb; }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-success { background: #d1fae5; color: #065f46; }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .badge-danger { background: #fee2e2; color: #991b1b; }
+    .badge-info { background: #dbeafe; color: #1e40af; }
+    .badge-default { background: #f3f4f6; color: #4b5563; }
+    .pagination {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .page-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .page-btn:hover { background: #f9fafb; }
+    .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .page-info { font-size: 13px; color: var(--text-muted); }
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+    .sync-panel {
+      background: #f9fafb;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .sync-result {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .sync-item {
+      background: white;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .sync-item-label { font-size: 12px; color: var(--text-muted); }
+    .sync-item-value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+    .form-input, .form-textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .form-textarea { min-height: 80px; resize: vertical; }
+    .form-input:focus, .form-textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .qrcode-preview {
+      max-width: 200px;
+      max-height: 200px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+    .toast {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 14px 20px;
+      border-radius: 10px;
+      color: white;
+      font-weight: 500;
+      z-index: 1000;
+      transform: translateX(150%);
+      transition: transform 0.3s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .toast.show { transform: translateX(0); }
+    .toast-success { background: var(--success); }
+    .toast-error { background: var(--danger); }
+    .detail-row { margin-bottom: 10px; }
+    .detail-label { font-size: 12px; color: var(--text-muted); }
+    .detail-value { font-size: 14px; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">开发者后台</div>
+    <div class="header-actions">
+      <button class="btn btn-primary" id="syncBtn" onclick="showSyncPage()">
+        <span id="syncIcon">🔄</span>
+        <span id="syncText">同步数据</span>
+      </button>
+      <button class="btn btn-outline" onclick="logout()">退出登录</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="sidebar">
+      <div class="nav-item active" data-page="overview" onclick="showPage('overview')">
+        <span class="nav-icon">📊</span> 概览
+      </div>
+      <div class="nav-item" data-page="users" onclick="showPage('users')">
+        <span class="nav-icon">👥</span> 用户管理
+      </div>
+      <div class="nav-item" data-page="transactions" onclick="showPage('transactions')">
+        <span class="nav-icon">💰</span> 交易记录
+      </div>
+      <div class="nav-item" data-page="stores" onclick="showPage('stores')">
+        <span class="nav-icon">🏪</span> 店铺管理
+      </div>
+      <div class="nav-item" data-page="categories" onclick="showPage('categories')">
+        <span class="nav-icon">🏷️</span> 分类管理
+      </div>
+      <div class="nav-item" data-page="subscriptions" onclick="showPage('subscriptions')">
+        <span class="nav-icon">⭐</span> 订阅管理
+      </div>
+      <div class="nav-item" data-page="orders" onclick="showPage('orders')">
+        <span class="nav-icon">📋</span> 订单记录
+      </div>
+      <div class="nav-item" data-page="feedback" onclick="showPage('feedback')">
+        <span class="nav-icon">💬</span> 反馈建议
+      </div>
+      <div class="nav-item" data-page="logs" onclick="showPage('logs')">
+        <span class="nav-icon">📝</span> 操作日志
+      </div>
+      <div class="nav-item" data-page="versions" onclick="showPage('versions')">
+        <span class="nav-icon">📱</span> 应用版本
+      </div>
+      <div class="nav-item" data-page="payment" onclick="showPage('payment')">
+        <span class="nav-icon">💳</span> 支付配置
+      </div>
+      <div class="nav-item" data-page="sync" onclick="showPage('sync')">
+        <span class="nav-icon">🔄</span> 数据同步
+      </div>
+    </div>
+
+    <div class="main" id="mainContent">
+      <!-- Pages will be rendered here -->
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API_BASE = '/api/v1/admin';
+    const state = {
+      currentPage: 'overview',
+      pageData: {},
     };
 
-    res.json(enrichedUser);
-  } catch (error) {
-    console.error('获取用户详情失败:', error);
-    res.status(500).json({ error: '获取用户详情失败' });
-  }
-});
+    function getToken() {
+      return localStorage.getItem('adminToken');
+    }
 
-// 全量同步端点
-router.post('/sync-all', async (req: any, res: any) => {
-  try {
-    const result = await syncAllData();
-    res.json({ success: true, message: '全量数据同步完成', details: result });
-  } catch (err: any) {
-    console.error('[Admin] 全量同步失败:', err);
-    res.status(500).json({ error: '同步失败: ' + (err.message || String(err)) });
-  }
-});
+    async function apiRequest(path, options = {}) {
+      const res = await fetch(API_BASE + path, {
+        ...options,
+        headers: {
+          'x-admin-token': getToken(),
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+      });
+      if (res.status === 401) {
+        localStorage.removeItem('adminToken');
+        window.location.href = '/api/v1/admin/login';
+        return;
+      }
+      return res;
+    }
 
-export default router;
+    function showToast(message, type = 'success') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = 'toast toast-' + type + ' show';
+      setTimeout(() => { toast.classList.remove('show'); }, 3000);
+    }
+
+    function logout() {
+      localStorage.removeItem('adminToken');
+      window.location.href = '/api/v1/admin/login';
+    }
+
+    function showPage(page) {
+      state.currentPage = page;
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelector('[data-page="' + page + '"]').classList.add('active');
+
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载中...</div>';
+
+      switch (page) {
+        case 'overview': renderOverview(); break;
+        case 'users': renderUsers(); break;
+        case 'transactions': renderTransactions(); break;
+        case 'stores': renderStores(); break;
+        case 'categories': renderCategories(); break;
+        case 'subscriptions': renderSubscriptions(); break;
+        case 'orders': renderOrders(); break;
+        case 'feedback': renderFeedback(); break;
+        case 'logs': renderLogs(); break;
+        case 'versions': renderVersions(); break;
+        case 'payment': renderPayment(); break;
+        case 'sync': renderSync(); break;
+      }
+    }
+
+    function showSyncPage() {
+      showPage('sync');
+    }
+
+    function formatMoney(amount) {
+      if (amount === null || amount === undefined) return '-';
+      const num = parseFloat(amount);
+      if (isNaN(num)) return '-';
+      return '¥' + num.toFixed(2);
+    }
+
+    function formatDate(date) {
+      if (!date) return '-';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '-';
+      return d.toLocaleString('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      });
+    }
+
+    function escapeHtml(text) {
+      if (text === null || text === undefined) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function getRoleBadge(role) {
+      if (role === 'owner') return '<span class="badge badge-success">主账号</span>';
+      if (role === 'member') return '<span class="badge badge-info">子账号</span>';
+      return '<span class="badge badge-default">' + escapeHtml(role) + '</span>';
+    }
+
+    function renderPagination(containerId, page, limit, total, onPageChange) {
+      const totalPages = Math.ceil(total / limit) || 1;
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.innerHTML = '';
+
+      const prevBtn = document.createElement('button');
+      prevBtn.className = 'page-btn';
+      prevBtn.textContent = '上一页';
+      prevBtn.disabled = page <= 1;
+      prevBtn.onclick = () => onPageChange(page - 1);
+      el.appendChild(prevBtn);
+
+      const info = document.createElement('span');
+      info.className = 'page-info';
+      info.textContent = '第 ' + page + ' / ' + totalPages + ' 页，共 ' + total + ' 条';
+      el.appendChild(info);
+
+      const nextBtn = document.createElement('button');
+      nextBtn.className = 'page-btn';
+      nextBtn.textContent = '下一页';
+      nextBtn.disabled = page >= totalPages;
+      nextBtn.onclick = () => onPageChange(page + 1);
+      el.appendChild(nextBtn);
+    }
+
+    // ================= Overview =================
+    async function renderOverview() {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载统计数据...</div>';
+
+      try {
+        const res = await apiRequest('/dashboard-data');
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">数据概览</div>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">总用户</div>
+              <div class="stat-value">\${data.totalUsers || 0}</div>
+              <div class="stat-change">主账号 \${data.ownerCount || 0} / 子账号 \${data.memberCount || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">店铺总数</div>
+              <div class="stat-value">\${data.storeCount || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">交易记录</div>
+              <div class="stat-value">\${data.transactionCount || 0}</div>
+              <div class="stat-change">收入 \${formatMoney(data.totalIncome)} / 支出 \${formatMoney(data.totalExpense)}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">订阅用户</div>
+              <div class="stat-value">\${data.subscriptionCount || 0}</div>
+              <div class="stat-change">Pro \${data.proCount || 0} / Free \${data.freeCount || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">订单收入</div>
+              <div class="stat-value">\${formatMoney(data.orderRevenue)}</div>
+              <div class="stat-change">已付订单 \${data.paidOrderCount || 0} / 总订单 \${data.orderCount || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">今日收入</div>
+              <div class="stat-value">\${formatMoney(data.revenueToday)}</div>
+              <div class="stat-change">本月 \${formatMoney(data.revenueThisMonth)}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">反馈建议</div>
+              <div class="stat-value">\${data.feedbackCount || 0}</div>
+              <div class="stat-change">总计 \${data.feedbackCount || 0}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">24小时活跃用户</div>
+              <div class="stat-value">\${data.activeUsersToday || 0}</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">快速入口</div>
+            </div>
+            <div class="toolbar">
+              <button class="btn btn-primary" onclick="showPage('users')">用户管理</button>
+              <button class="btn btn-primary" onclick="showPage('transactions')">交易记录</button>
+              <button class="btn btn-primary" onclick="showPage('payment')">支付配置</button>
+              <button class="btn btn-primary" onclick="showPage('sync')">数据同步</button>
+            </div>
+          </div>
+        \`;
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    // ================= Users =================
+    async function renderUsers(page = 1) {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载用户数据...</div>';
+
+      const search = state.pageData.usersSearch || '';
+      const role = state.pageData.usersRole || '';
+
+      try {
+        const params = new URLSearchParams({ page: String(page), limit: '20' });
+        if (search) params.set('search', search);
+        if (role) params.set('role', role);
+
+        const res = await apiRequest('/users?' + params.toString());
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">用户管理</div>
+          <div class="card">
+            <div class="toolbar">
+              <input type="text" class="search-input" id="usersSearch" placeholder="搜索账号 / 显示名" value="\${escapeHtml(search)}">
+              <select class="select" id="usersRole">
+                <option value="">全部角色</option>
+                <option value="owner" \${role === 'owner' ? 'selected' : ''}>主账号</option>
+                <option value="member" \${role === 'member' ? 'selected' : ''}>子账号</option>
+              </select>
+              <button class="btn btn-primary" onclick="searchUsers()">搜索</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>登录账号</th>
+                  <th>显示名</th>
+                  <th>角色</th>
+                  <th>店铺数</th>
+                  <th>交易数</th>
+                  <th>套餐</th>
+                  <th>注册来源</th>
+                  <th>注册时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.users.length === 0 ? '<tr><td colspan="8" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.users.map(u => \`
+                  <tr>
+                    <td>\${escapeHtml(u.login_name)}</td>
+                    <td>\${escapeHtml(u.display_name)}</td>
+                    <td>\${getRoleBadge(u.role)}</td>
+                    <td>\${u.store_count || 0}</td>
+                    <td>\${u.transaction_count || 0}</td>
+                    <td>\${escapeHtml(u.plan_type || '-')} \${u.subscription_status ? '<span class="badge badge-' + (u.subscription_status === 'active' ? 'success' : 'warning') + '">' + escapeHtml(u.subscription_status) + '</span>' : ''}</td>
+                    <td>\${escapeHtml(u.register_source || '-')}</td>
+                    <td>\${formatDate(u.created_at)}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+            <div class="pagination" id="usersPagination"></div>
+          </div>
+        \`;
+
+        renderPagination('usersPagination', data.pagination.page, data.pagination.limit, data.pagination.total, renderUsers);
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    function searchUsers() {
+      state.pageData.usersSearch = document.getElementById('usersSearch').value;
+      state.pageData.usersRole = document.getElementById('usersRole').value;
+      renderUsers(1);
+    }
+
+    // ================= Transactions =================
+    async function renderTransactions(page = 1) {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载交易数据...</div>';
+
+      const search = state.pageData.transactionsSearch || '';
+      const type = state.pageData.transactionsType || '';
+
+      try {
+        const params = new URLSearchParams({ page: String(page), limit: '20' });
+        if (search) params.set('search', search);
+        if (type) params.set('type', type);
+
+        const res = await apiRequest('/transactions?' + params.toString());
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">交易记录</div>
+          <div class="card">
+            <div class="toolbar">
+              <input type="text" class="search-input" id="transactionsSearch" placeholder="搜索账号 / 备注" value="\${escapeHtml(search)}">
+              <select class="select" id="transactionsType">
+                <option value="">全部类型</option>
+                <option value="income" \${type === 'income' ? 'selected' : ''}>收入</option>
+                <option value="expense" \${type === 'expense' ? 'selected' : ''}>支出</option>
+              </select>
+              <button class="btn btn-primary" onclick="searchTransactions()">搜索</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>账号</th>
+                  <th>金额</th>
+                  <th>类型</th>
+                  <th>分类</th>
+                  <th>店铺</th>
+                  <th>日期</th>
+                  <th>备注</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.transactions.length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.transactions.map(t => \`
+                  <tr>
+                    <td>\${escapeHtml(t.login_name)}</td>
+                    <td style="font-weight:600;color:\${t.type === 'income' ? '#059669' : '#dc2626'}">\${formatMoney(t.amount)}</td>
+                    <td>\${t.type === 'income' ? '<span class="badge badge-success">收入</span>' : '<span class="badge badge-danger">支出</span>'}</td>
+                    <td>\${escapeHtml(t.category_name || '-')}</td>
+                    <td>\${escapeHtml(t.store_name || '-')}</td>
+                    <td>\${formatDate(t.transaction_date)}</td>
+                    <td>\${escapeHtml(t.description || '-')}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+            <div class="pagination" id="transactionsPagination"></div>
+          </div>
+        \`;
+
+        renderPagination('transactionsPagination', data.pagination.page, data.pagination.limit, data.pagination.total, renderTransactions);
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    function searchTransactions() {
+      state.pageData.transactionsSearch = document.getElementById('transactionsSearch').value;
+      state.pageData.transactionsType = document.getElementById('transactionsType').value;
+      renderTransactions(1);
+    }
+
+    // ================= Stores =================
+    async function renderStores(page = 1) {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载店铺数据...</div>';
+
+      try {
+        const res = await apiRequest('/stores?page=' + page + '&limit=20');
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">店铺管理</div>
+          <div class="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>店铺名称</th>
+                  <th>所属账号</th>
+                  <th>备注</th>
+                  <th>成员数</th>
+                  <th>交易数</th>
+                  <th>创建时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.stores.length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.stores.map(s => \`
+                  <tr>
+                    <td>\${escapeHtml(s.name)}</td>
+                    <td>\${escapeHtml(s.login_name)}</td>
+                    <td>\${escapeHtml(s.notes || '-')}</td>
+                    <td>\${s.member_count || 0}</td>
+                    <td>\${s.transaction_count || 0}</td>
+                    <td>\${formatDate(s.created_at)}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+            <div class="pagination" id="storesPagination"></div>
+          </div>
+        \`;
+
+        renderPagination('storesPagination', data.pagination.page, data.pagination.limit, data.pagination.total, renderStores);
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    // ================= Categories =================
+    async function renderCategories() {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载分类数据...</div>';
+
+      try {
+        const res = await apiRequest('/categories');
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">分类管理</div>
+          <div class="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>类型</th>
+                  <th>图标</th>
+                  <th>颜色</th>
+                  <th>默认</th>
+                  <th>使用次数</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.categories.length === 0 ? '<tr><td colspan="6" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.categories.map(c => \`
+                  <tr>
+                    <td>\${escapeHtml(c.name)}</td>
+                    <td>\${c.type === 'income' ? '<span class="badge badge-success">收入</span>' : '<span class="badge badge-danger">支出</span>'}</td>
+                    <td>\${escapeHtml(c.icon || '-')}</td>
+                    <td><span style="display:inline-block;width:20px;height:20px;background:\${escapeHtml(c.color || '#ccc')};border-radius:4px;vertical-align:middle;"></span> \${escapeHtml(c.color || '-')}</td>
+                    <td>\${c.is_default ? '<span class="badge badge-info">是</span>' : '<span class="badge badge-default">否</span>'}</td>
+                    <td>\${c.usage_count || 0}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+          </div>
+        \`;
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    // ================= Subscriptions =================
+    async function renderSubscriptions(page = 1) {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载订阅数据...</div>';
+
+      try {
+        const res = await apiRequest('/subscriptions?page=' + page + '&limit=20');
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">订阅管理</div>
+          <div class="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>账号</th>
+                  <th>套餐</th>
+                  <th>状态</th>
+                  <th>开始时间</th>
+                  <th>到期时间</th>
+                  <th>创建时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.subscriptions.length === 0 ? '<tr><td colspan="6" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.subscriptions.map(s => \`
+                  <tr>
+                    <td>\${escapeHtml(s.login_name)}</td>
+                    <td>\${escapeHtml(s.plan_type)}</td>
+                    <td>\${s.status === 'active' ? '<span class="badge badge-success">有效</span>' : '<span class="badge badge-warning">' + escapeHtml(s.status) + '</span>'}</td>
+                    <td>\${formatDate(s.started_at)}</td>
+                    <td>\${formatDate(s.expires_at)}</td>
+                    <td>\${formatDate(s.created_at)}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+            <div class="pagination" id="subscriptionsPagination"></div>
+          </div>
+        \`;
+
+        renderPagination('subscriptionsPagination', data.pagination.page, data.pagination.limit, data.pagination.total, renderSubscriptions);
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    // ================= Orders =================
+    async function renderOrders(page = 1) {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载订单数据...</div>';
+
+      const status = state.pageData.ordersStatus || '';
+
+      try {
+        const params = new URLSearchParams({ page: String(page), limit: '20' });
+        if (status) params.set('status', status);
+
+        const res = await apiRequest('/subscription-orders?' + params.toString());
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">订单记录</div>
+          <div class="card">
+            <div class="toolbar">
+              <select class="select" id="ordersStatus">
+                <option value="">全部状态</option>
+                <option value="pending" \${status === 'pending' ? 'selected' : ''}>待支付</option>
+                <option value="paid" \${status === 'paid' ? 'selected' : ''}>已支付</option>
+                <option value="cancelled" \${status === 'cancelled' ? 'selected' : ''}>已取消</option>
+              </select>
+              <button class="btn btn-primary" onclick="searchOrders()">筛选</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>账号</th>
+                  <th>套餐</th>
+                  <th>金额</th>
+                  <th>状态</th>
+                  <th>支付方式</th>
+                  <th>时长</th>
+                  <th>创建时间</th>
+                  <th>支付时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.orders.length === 0 ? '<tr><td colspan="8" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.orders.map(o => \`
+                  <tr>
+                    <td>\${escapeHtml(o.login_name)}</td>
+                    <td>\${escapeHtml(o.plan_type)}</td>
+                    <td>\${formatMoney(o.amount)}</td>
+                    <td>\${
+                      o.status === 'paid' ? '<span class="badge badge-success">已支付</span>' :
+                      o.status === 'pending' ? '<span class="badge badge-warning">待支付</span>' :
+                      '<span class="badge badge-default">' + escapeHtml(o.status) + '</span>'
+                    }</td>
+                    <td>\${escapeHtml(o.payment_method || '-')}</td>
+                    <td>\${o.duration_months || '-'} 个月</td>
+                    <td>\${formatDate(o.created_at)}</td>
+                    <td>\${formatDate(o.paid_at)}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+            <div class="pagination" id="ordersPagination"></div>
+          </div>
+        \`;
+
+        renderPagination('ordersPagination', data.pagination.page, data.pagination.limit, data.pagination.total, renderOrders);
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    function searchOrders() {
+      state.pageData.ordersStatus = document.getElementById('ordersStatus').value;
+      renderOrders(1);
+    }
+
+    // ================= Feedback =================
+    async function renderFeedback(page = 1) {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载反馈数据...</div>';
+
+      const status = state.pageData.feedbackStatus || '';
+
+      try {
+        const params = new URLSearchParams({ page: String(page), limit: '20' });
+        if (status) params.set('status', status);
+
+        const res = await apiRequest('/feedback?' + params.toString());
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">反馈建议</div>
+          <div class="card">
+            <div class="toolbar">
+              <select class="select" id="feedbackStatus">
+                <option value="">全部状态</option>
+                <option value="pending" \${status === 'pending' ? 'selected' : ''}>待处理</option>
+                <option value="resolved" \${status === 'resolved' ? 'selected' : ''}>已处理</option>
+              </select>
+              <button class="btn btn-primary" onclick="searchFeedback()">筛选</button>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>账号</th>
+                  <th>内容</th>
+                  <th>联系方式</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.feedback.length === 0 ? '<tr><td colspan="6" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.feedback.map(f => \`
+                  <tr>
+                    <td>\${escapeHtml(f.login_name)}</td>
+                    <td>\${escapeHtml(f.content)}</td>
+                    <td>\${escapeHtml(f.contact || '-')}</td>
+                    <td>\${formatDate(f.created_at)}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+            <div class="pagination" id="feedbackPagination"></div>
+          </div>
+        \`;
+
+        renderPagination('feedbackPagination', data.pagination.page, data.pagination.limit, data.pagination.total, renderFeedback);
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    function searchFeedback() {
+      state.pageData.feedbackStatus = document.getElementById('feedbackStatus').value;
+      renderFeedback(1);
+    }
+
+    // ================= Logs =================
+    async function renderLogs(page = 1) {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载日志数据...</div>';
+
+      try {
+        const res = await apiRequest('/activity-logs?page=' + page + '&limit=20');
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">操作日志</div>
+          <div class="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>账号</th>
+                  <th>操作类型</th>
+                  <th>描述</th>
+                  <th>IP</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.logs.length === 0 ? '<tr><td colspan="5" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.logs.map(l => \`
+                  <tr>
+                    <td>\${escapeHtml(l.login_name)}</td>
+                    <td>\${escapeHtml(l.activity_type)}</td>
+                    <td>\${escapeHtml(l.description || '-')}</td>
+                    <td>\${escapeHtml(l.ip_address || '-')}</td>
+                    <td>\${formatDate(l.created_at)}</td>
+                  </tr>
+                \`).join('')}
+
+              </tbody>
+            </table>
+            <div class="pagination" id="logsPagination"></div>
+          </div>
+        \`;
+
+        renderPagination('logsPagination', data.pagination.page, data.pagination.limit, data.pagination.total, renderLogs);
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    // ================= Versions =================
+    async function renderVersions() {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载版本数据...</div>';
+
+      try {
+        const res = await apiRequest('/app-versions');
+        const data = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">应用版本</div>
+          <div class="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>版本号</th>
+                  <th>最低版本</th>
+                  <th>强制更新</th>
+                  <th>下载地址</th>
+                  <th>更新说明</th>
+                  <th>发布时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                \${data.versions.length === 0 ? '<tr><td colspan="6" style="text-align:center;padding:40px;color:#6b7280;">暂无数据</td></tr>' : ''}
+                \${data.versions.map(v => \`
+                  <tr>
+                    <td>\${escapeHtml(v.version)}</td>
+                    <td>\${escapeHtml(v.platform)}</td>
+                    <td>\${v.force_update ? '<span class="badge badge-danger">是</span>' : '<span class="badge badge-default">否</span>'}</td>
+                    <td><a href="\${escapeHtml(v.download_url)}" target="_blank">下载</a></td>
+                    <td>\${escapeHtml(v.release_notes || '-')}</td>
+                    <td>\${formatDate(v.created_at)}</td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+          </div>
+        \`;
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    // ================= Payment Config =================
+    async function renderPayment() {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = '<div class="empty-state">加载支付配置...</div>';
+
+      try {
+        const res = await apiRequest('/payment-config');
+        const config = await res.json();
+
+        main.innerHTML = \`
+          <div class="page-title">支付配置</div>
+          <div class="card">
+            <div class="form-group">
+              <label class="form-label">支付宝收款二维码 URL</label>
+              <input type="text" class="form-input" id="alipayUrl" value="\${escapeHtml(config.alipay_qrcode_url || '')}" placeholder="请输入支付宝二维码图片地址">
+              <div id="alipayPreview">
+                \${config.alipay_qrcode_url ? '<img src="' + escapeHtml(config.alipay_qrcode_url) + '" class="qrcode-preview" onerror="this.style.display=\\'none\\'">' : ''}
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">微信收款二维码 URL</label>
+              <input type="text" class="form-input" id="wechatUrl" value="\${escapeHtml(config.wechat_qrcode_url || '')}" placeholder="请输入微信二维码图片地址">
+              <div id="wechatPreview">
+                \${config.wechat_qrcode_url ? '<img src="' + escapeHtml(config.wechat_qrcode_url) + '" class="qrcode-preview" onerror="this.style.display=\\'none\\'">' : ''}
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">客服联系方式</label>
+              <textarea class="form-textarea" id="contactInfo" placeholder="请输入客服微信、电话或其他联系方式">\${escapeHtml(config.contact_info || '')}</textarea>
+            </div>
+            <button class="btn btn-primary" onclick="savePaymentConfig()">保存配置</button>
+          </div>
+        \`;
+      } catch (err) {
+        main.innerHTML = '<div class="empty-state">加载失败: ' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    async function savePaymentConfig() {
+      const btn = document.querySelector('button[onclick="savePaymentConfig()"]');
+      btn.disabled = true;
+      btn.textContent = '保存中...';
+
+      try {
+        const res = await apiRequest('/payment-config', {
+          method: 'PUT',
+          body: JSON.stringify({
+            alipay_qrcode_url: document.getElementById('alipayUrl').value,
+            wechat_qrcode_url: document.getElementById('wechatUrl').value,
+            contact_info: document.getElementById('contactInfo').value,
+          }),
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          showToast('支付配置已保存');
+          renderPayment();
+        } else {
+          throw new Error(data.error || '保存失败');
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '保存配置';
+      }
+    }
+
+    // ================= Sync =================
+    function renderSync() {
+      const main = document.getElementById('mainContent');
+      main.innerHTML = \`
+        <div class="page-title">数据同步</div>
+        <div class="card">
+          <p style="color:var(--text-muted);margin-bottom:16px;">点击同步按钮，系统会从 auth.users 同步用户信息到 user_profiles，并补齐相关关联数据。</p>
+          <button class="btn btn-primary" id="doSyncBtn" onclick="doSync()">
+            <span id="doSyncIcon">🔄</span>
+            <span id="doSyncText">开始同步</span>
+          </button>
+          <div id="syncResult" style="margin-top:20px;"></div>
+        </div>
+      \`;
+    }
+
+    async function doSync() {
+      const btn = document.getElementById('doSyncBtn');
+      const icon = document.getElementById('doSyncIcon');
+      const text = document.getElementById('doSyncText');
+      const result = document.getElementById('syncResult');
+
+      btn.disabled = true;
+      text.textContent = '同步中...';
+      icon.innerHTML = '<span class="loading"></span>';
+      result.innerHTML = '<div style="color:var(--text-muted);">正在同步，请稍候...</div>';
+
+      try {
+        const res = await apiRequest('/sync-all', { method: 'POST' });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '同步失败');
+        }
+
+        const r = data.results || {};
+        result.innerHTML = \`
+          <div style="color:var(--success);font-weight:600;margin-bottom:12px;">✅ 同步完成（耗时 \${r.duration || 0}ms）</div>
+          <div class="sync-result">
+            <div class="sync-item">
+              <div class="sync-item-label">同步用户</div>
+              <div class="sync-item-value">\${r.users?.synced || 0}</div>
+            </div>
+            <div class="sync-item">
+              <div class="sync-item-label">活动日志</div>
+              <div class="sync-item-value">\${r.activityLogs?.created || 0}</div>
+            </div>
+            <div class="sync-item">
+              <div class="sync-item-label">显示名历史</div>
+              <div class="sync-item-value">\${r.displayNameHistory?.count || 0}</div>
+            </div>
+            <div class="sync-item">
+              <div class="sync-item-label">默认分类</div>
+              <div class="sync-item-value">\${r.defaultCategories?.count || 0}</div>
+            </div>
+            <div class="sync-item">
+              <div class="sync-item-label">支付配置</div>
+              <div class="sync-item-value">\${r.paymentConfig?.created ? '已创建' : '已存在'}</div>
+            </div>
+          </div>
+        \`;
+        showToast('数据同步完成');
+      } catch (err) {
+        result.innerHTML = '<div style="color:var(--danger);">❌ ' + escapeHtml(err.message) + '</div>';
+        showToast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        text.textContent = '开始同步';
+        icon.textContent = '🔄';
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = getToken();
+      if (!token) {
+        window.location.href = '/api/v1/admin/login';
+        return;
+      }
+      showPage('overview');
+    });
+  </script>
+</body>
+</html>`;
+
+export { adminLoginRouter, router as default };

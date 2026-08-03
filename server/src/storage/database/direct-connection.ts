@@ -31,7 +31,7 @@ function getPool(): Pool {
 /**
  * Execute a SELECT query and return all rows
  */
-export async function queryAll(sql: string, params?: any[]): Promise<any[]> {
+export async function queryAll<T = any>(sql: string, params?: any[]): Promise<T[]> {
   const client = await getPool().connect();
   try {
     const result = await client.query(sql, params);
@@ -44,7 +44,7 @@ export async function queryAll(sql: string, params?: any[]): Promise<any[]> {
 /**
  * Execute a SELECT query and return the first row
  */
-export async function queryOne(sql: string, params?: any[]): Promise<any> {
+export async function queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
   const rows = await queryAll(sql, params);
   return rows[0] || null;
 }
